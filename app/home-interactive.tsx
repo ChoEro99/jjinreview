@@ -387,7 +387,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                   
                   const rank = selfStore.rank;
                   const total = storeDetail.insight.comparedStores.length;
-                  const percentile = Math.round(((total - rank + 1) / total) * 100);
+                  const percentile = Math.round((rank / total) * 100);
                   
                   return (
                     <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E", marginBottom: 16 }}>
@@ -439,7 +439,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                           style={{
                             padding: "10px 14px",
                             borderBottom: "1px solid rgba(140, 112, 81, 0.4)",
-                            background: comparedStore.isSelf ? "rgba(255, 235, 59, 0.2)" : isHovered ? "rgba(71, 104, 44, 0.1)" : "#faf8f5",
+                            background: comparedStore.isSelf ? "rgba(40, 80, 46, 0.15)" : isHovered ? "rgba(71, 104, 44, 0.1)" : "#faf8f5",
                             cursor: comparedStore.isSelf ? "default" : "pointer",
                             transition: "all 0.2s ease",
                             fontSize: 14,
