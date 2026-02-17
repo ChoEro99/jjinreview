@@ -53,7 +53,7 @@ interface StoreDetail {
   };
   insight?: {
     comparedStores?: Array<{
-      id: number;
+      id: number | string;
       name: string;
       address: string | null;
       rank: number;
@@ -98,7 +98,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [fetchError, setFetchError] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
-  const [hoveredCompareId, setHoveredCompareId] = useState<number | null>(null);
+  const [hoveredCompareId, setHoveredCompareId] = useState<number | string | null>(null);
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [failedPhotos, setFailedPhotos] = useState<Set<number>>(new Set());
@@ -250,6 +250,67 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         setFetchError(true);
       }
     } finally {
+      setIsLoadingDetail(false);
+    }
+  };
+
+  const handleComparedStoreClick = async (comparedStoreId: number | string, storeName: string, storeAddress: string | null) => {
+    // If it's a number, it's already a registered store ID
+    if (typeof comparedStoreId === "number") {
+      handleStoreClick(comparedStoreId);
+      return;
+    }
+
+    // If it's a string, check if it's in the format "store-{id}"
+    if (typeof comparedStoreId === "string" && comparedStoreId.startsWith("store-")) {
+      const numericId = parseInt(comparedStoreId.substring(6), 10);
+      if (!isNaN(numericId)) {
+        handleStoreClick(numericId);
+        return;
+      }
+    }
+
+    // Otherwise, it's a Google place ID - search/register to get the numeric ID
+    setIsLoadingDetail(true);
+    setFetchError(false);
+    setStoreDetail(null);
+
+    try {
+      // Search for the store using its name (which should trigger auto-registration if not found)
+      const searchQuery = storeAddress ? `${storeName} ${storeAddress}` : storeName;
+      const response = await fetch("/api/stores/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: searchQuery, limit: 5 }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.ok && data.stores && data.stores.length > 0) {
+          // Find the best match - look for exact name and address match
+          const exactMatch = data.stores.find((s: StoreWithSummary) => {
+            const nameMatch = s.name.toLowerCase().trim() === storeName.toLowerCase().trim();
+            const addressMatch = storeAddress 
+              ? (s.address?.toLowerCase().trim() === storeAddress.toLowerCase().trim())
+              : true;
+            return nameMatch && addressMatch;
+          });
+
+          const targetStore = exactMatch || data.stores[0];
+          handleStoreClick(targetStore.id);
+        } else {
+          console.error("No stores found for comparison store:", storeName);
+          setFetchError(true);
+          setIsLoadingDetail(false);
+        }
+      } else {
+        console.error("Failed to search for comparison store:", response.status, response.statusText);
+        setFetchError(true);
+        setIsLoadingDetail(false);
+      }
+    } catch (error) {
+      console.error("Error handling comparison store click:", error);
+      setFetchError(true);
       setIsLoadingDetail(false);
     }
   };
@@ -784,7 +845,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                           key={comparedStore.id}
                           onClick={() => {
                             if (!comparedStore.isSelf) {
-                              handleStoreClick(comparedStore.id);
+                              handleComparedStoreClick(comparedStore.id, comparedStore.name, comparedStore.address);
                             }
                           }}
                           onMouseEnter={() => setHoveredCompareId(comparedStore.id)}
