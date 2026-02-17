@@ -3,6 +3,12 @@
 import React, { useState, useEffect } from "react";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 
+// Rating trust score label mapping
+const RATING_TRUST_LABEL_MAPPING: Record<string, string> = {
+  "매우 신뢰": "안정적 평점",
+  "신뢰 가능": "안정적 평점",
+};
+
 interface StoreBase {
   id: number;
   name: string;
@@ -341,62 +347,80 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
           {!isLoadingDetail && storeDetail && (
             <div>
-              <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8, color: "#28502E" }}>
-                {storeDetail.store.name}
-              </h2>
-              <div style={{ color: "#8C7051", marginBottom: 20 }}>
-                {storeDetail.store.address ?? "-"}
-              </div>
-
               <div
                 style={{
                   border: "1px solid rgba(140, 112, 81, 0.4)",
                   borderRadius: 14,
-                  padding: 16,
+                  padding: 24,
                   background: "#faf8f5",
+                  marginBottom: 16,
+                }}
+              >
+                {/* 가게 이름 */}
+                <div style={{ fontSize: 28, fontWeight: 800, color: "#28502E", marginBottom: 16 }}>
+                  🍽 {storeDetail.store.name}
+                </div>
+
+                {/* 평점 */}
+                {storeDetail.insight?.rating !== null && storeDetail.insight?.rating !== undefined && (
+                  <div style={{ fontSize: 44, fontWeight: 800, color: "#28502E", marginBottom: 12 }}>
+                    ⭐ {storeDetail.insight.rating.toFixed(1)}
+                  </div>
+                )}
+
+                {/* 평점신뢰도 */}
+                {storeDetail.insight?.ratingTrustScore && (() => {
+                  const mappedLabel = RATING_TRUST_LABEL_MAPPING[storeDetail.insight.ratingTrustScore.label] || storeDetail.insight.ratingTrustScore.label;
+                  
+                  return (
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E", marginBottom: 12 }}>
+                      {storeDetail.insight.ratingTrustScore.emoji} {mappedLabel}
+                    </div>
+                  );
+                })()}
+
+                {/* 1km 순위 */}
+                {storeDetail.insight?.comparedStores && (() => {
+                  const selfStore = storeDetail.insight.comparedStores.find(s => s.isSelf);
+                  if (!selfStore) return null;
+                  
+                  const rank = selfStore.rank;
+                  const total = storeDetail.insight.comparedStores.length;
+                  const percentile = Math.round((rank / total) * 100);
+                  
+                  return (
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E", marginBottom: 16 }}>
+                      📍 반경 1km 상위 {percentile}% ({rank}위 / {total}개)
+                    </div>
+                  );
+                })()}
+
+                {/* 부가 정보 한 줄 */}
+                <div style={{ fontSize: 13, color: "#8C7051" }}>
+                  리뷰 {storeDetail.summary.reviewCount}개 · 반경 1km 내 가게 비교 · {storeDetail.store.address ?? "주소 정보 없음"}
+                </div>
+              </div>
+
+              {/* 애드센스 광고 플레이스홀더 (가게 상세 하단) */}
+              <div
+                style={{
+                  border: "1px dashed #c9b99e",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  fontSize: 12,
+                  color: "#8C7051",
+                  background: "#faf8f5",
+                  textAlign: "center",
                   marginBottom: 24,
                 }}
               >
-                <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 10, color: "#28502E" }}>점수 요약</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 16, fontSize: 14, color: "#2d2d2d" }}>
-                  <span>
-                    신뢰가중 평점: {storeDetail.summary.weightedRating?.toFixed(1) ?? "-"}
-                  </span>
-                  <span>리뷰 수: {storeDetail.summary.reviewCount}</span>
-                  <span>
-                    광고 의심 비율: {Math.round(storeDetail.summary.adSuspectRatio * 100)}%
-                  </span>
-                  <span>
-                    리뷰 신뢰 점수: {Math.round(storeDetail.summary.trustScore * 100)}점
-                  </span>
-                  <span>
-                    긍정 비율: {Math.round(storeDetail.summary.positiveRatio * 100)}%
-                  </span>
-                </div>
-                
-                {storeDetail.insight?.ratingTrustScore && (
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(140, 112, 81, 0.4)" }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: "#28502E", marginBottom: 6 }}>
-                      {storeDetail.insight.ratingTrustScore.emoji} 별점 신뢰도 {storeDetail.insight.ratingTrustScore.totalScore}점 ({storeDetail.insight.ratingTrustScore.label})
-                    </div>
-                    <div style={{ fontSize: 13, color: "#8C7051" }}>
-                      표본 {storeDetail.insight.ratingTrustScore.breakdown.sampleSize}/65 · 자연성 {storeDetail.insight.ratingTrustScore.breakdown.naturalness}/35
-                    </div>
-                  </div>
-                )}
-                
-                <div style={{ marginTop: 10, fontSize: 13, color: "#8C7051" }}>
-                  AI 분석 기반 자동추정이며 법적 확정 판단이 아닙니다.
-                  {storeDetail.summary.lastAnalyzedAt
-                    ? ` 마지막 분석: ${new Date(storeDetail.summary.lastAnalyzedAt).toLocaleString("ko-KR")}`
-                    : ""}
-                </div>
+                광고 영역 (가게 상세 요약 하단) · 슬롯 ID 입력 후 활성화
               </div>
 
               {storeDetail.insight?.comparedStores && storeDetail.insight.comparedStores.length > 0 && (
                 <div style={{ marginBottom: 24 }}>
                   <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
-                    주변 1km 비교 가게 ({storeDetail.insight.comparedStores.length})
+                    1km 비교 대상 (총 {storeDetail.insight.comparedStores.length}개)
                   </h3>
                   <div style={{ border: "1px solid rgba(140, 112, 81, 0.4)", borderRadius: 12, background: "#faf8f5", overflow: "hidden" }}>
                     {storeDetail.insight.comparedStores.map((comparedStore) => {
@@ -412,35 +436,48 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                           onMouseEnter={() => setHoveredCompareId(comparedStore.id)}
                           onMouseLeave={() => setHoveredCompareId(null)}
                           style={{
-                            padding: 12,
+                            padding: "10px 14px",
                             borderBottom: "1px solid rgba(140, 112, 81, 0.4)",
-                            background: comparedStore.isSelf ? "rgba(40, 80, 46, 0.12)" : isHovered ? "rgba(71, 104, 44, 0.1)" : "#faf8f5",
+                            background: comparedStore.isSelf ? "rgba(40, 80, 46, 0.15)" : isHovered ? "rgba(71, 104, 44, 0.1)" : "#faf8f5",
                             cursor: comparedStore.isSelf ? "default" : "pointer",
                             transition: "all 0.2s ease",
-                            border: comparedStore.isSelf ? "2px solid #28502E" : "2px solid transparent",
+                            fontSize: 14,
+                            color: "#2d2d2d",
                           }}
                         >
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                            <div style={{ flex: 1, minWidth: 200 }}>
-                              <div style={{ fontWeight: 700, fontSize: 14, color: "#28502E", marginBottom: 2 }}>
-                                {comparedStore.rank}위. {comparedStore.name}
-                                {comparedStore.isSelf && <span style={{ marginLeft: 6, fontSize: 12, color: "#8C7051" }}>(현재 가게)</span>}
-                              </div>
-                              <div style={{ fontSize: 12, color: "#8C7051" }}>
-                                {comparedStore.address ?? "주소 정보 없음"}
-                              </div>
-                            </div>
-                            <div style={{ fontSize: 13, color: "#2d2d2d", textAlign: "right" }}>
-                              <div>⭐ {comparedStore.rating.toFixed(1)}</div>
-                              <div style={{ fontSize: 11, color: "#8C7051" }}>리뷰 {comparedStore.reviewCount}</div>
-                            </div>
-                          </div>
+                          <span style={{ fontWeight: comparedStore.isSelf ? 700 : 400 }}>
+                            {comparedStore.rank}위 {comparedStore.name}
+                          </span>
+                          {comparedStore.isSelf && (
+                            <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 700, color: "#28502E" }}>
+                              (현재 가게)
+                            </span>
+                          )}
+                          <span style={{ marginLeft: 8, color: "#8C7051" }}>
+                            · ⭐{comparedStore.rating.toFixed(1)} · 리뷰 {comparedStore.reviewCount}
+                          </span>
                         </div>
                       );
                     })}
                   </div>
                 </div>
               )}
+
+              {/* 애드센스 광고 플레이스홀더 (리뷰 섹션 앞) */}
+              <div
+                style={{
+                  border: "1px dashed #c9b99e",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  fontSize: 12,
+                  color: "#8C7051",
+                  background: "#faf8f5",
+                  textAlign: "center",
+                  marginBottom: 24,
+                }}
+              >
+                광고 영역 (리뷰 목록 상단) · 슬롯 ID 입력 후 활성화
+              </div>
 
               <div>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
