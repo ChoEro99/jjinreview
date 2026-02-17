@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 
 // Rating trust score label mapping
@@ -101,6 +101,9 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [failedPhotos, setFailedPhotos] = useState<Set<number>>(new Set());
+  
+  // Cache for store details to avoid re-fetching
+  const storeDetailCache = useRef<Map<number, StoreDetail>>(new Map());
 
   useEffect(() => {
     const checkMobile = () => {
@@ -188,16 +191,33 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
   const handleStoreClick = async (storeId: number) => {
     setSelectedStoreId(storeId);
-    setIsLoadingDetail(true);
-    setStoreDetail(null);
-    setFailedPhotos(new Set()); // Reset failed photos for new store
+    
+    const cached = storeDetailCache.current.get(storeId);
+    if (cached) {
+      // Show cached data immediately - no loading spinner
+      setStoreDetail(cached);
+      setIsLoadingDetail(false);
+    } else {
+      // No cache - show loading spinner
+      setIsLoadingDetail(true);
+      setStoreDetail(null);
+      setFailedPhotos(new Set());
+    }
 
+    // Always fetch fresh data (revalidate)
     try {
       const response = await fetch(`/api/stores/${storeId}`);
       if (response.ok) {
         const data = await response.json();
         if (data.ok) {
-          setStoreDetail(data);
+          storeDetailCache.current.set(storeId, data);
+          // Only update if this store is still selected
+          setSelectedStoreId((currentId) => {
+            if (currentId === storeId) {
+              setStoreDetail(data);
+            }
+            return currentId;
+          });
         }
       }
     } catch (error) {
