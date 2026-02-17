@@ -2054,7 +2054,7 @@ async function searchGooglePlacesByKeyword(keyword: string, size = 10) {
 
   let pageToken: string | undefined = undefined;
   for (let page = 0; page < 3 && collected.length < target; page += 1) {
-    const response = await fetchGoogleJsonWithRetry<GooglePlaceSearchResponse>(
+    const response: GooglePlaceSearchResponse = await fetchGoogleJsonWithRetry<GooglePlaceSearchResponse>(
       "https://places.googleapis.com/v1/places:searchText",
       {
         method: "POST",
