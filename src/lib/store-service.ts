@@ -2077,7 +2077,7 @@ async function computeTopRankWithin1KmBySameLabel(store: StoreBase) {
     } catch {
       // Ignore nearby API failure
     }
-    
+
     return null;
   }
   const index = Math.max(
