@@ -7,6 +7,29 @@ type Props = {
   params: Promise<{ id: string }>;
 };
 
+const ADSENSE_CLIENT = "ca-pub-6051453612452994";
+const ADSENSE_SLOT_PLACEHOLDER = "REPLACE_WITH_AD_SLOT";
+
+function AdPlaceholder({ label }: { label: string }) {
+  return (
+    <div
+      data-ad-client={ADSENSE_CLIENT}
+      data-ad-slot={ADSENSE_SLOT_PLACEHOLDER}
+      style={{
+        border: "1px dashed #d4c7ba",
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 12,
+        color: "#7a6f65",
+        background: "#faf7f3",
+        textAlign: "center",
+      }}
+    >
+      광고 영역 ({label}) · 슬롯 ID 입력 후 활성화
+    </div>
+  );
+}
+
 export default async function StorePage({ params }: Props) {
   const resolved = await params;
   const storeId = Number(resolved.id);
@@ -52,6 +75,7 @@ export default async function StorePage({ params }: Props) {
             ? ` 마지막 분석: ${new Date(detail.summary.lastAnalyzedAt).toLocaleString("ko-KR")}`
             : ""}
         </div>
+        <AdPlaceholder label="점수 요약 하단" />
       </section>
 
       <section style={{ marginTop: 24 }}>
@@ -61,6 +85,9 @@ export default async function StorePage({ params }: Props) {
 
       <section style={{ marginTop: 28 }}>
         <h2 style={{ fontSize: 22, fontWeight: 800 }}>전체 리뷰 ({detail.reviews.length})</h2>
+        <div style={{ marginTop: 12 }}>
+          <AdPlaceholder label="리뷰 리스트 상단" />
+        </div>
 
         <ul style={{ marginTop: 14, padding: 0, listStyle: "none", display: "grid", gap: 12 }}>
           {detail.reviews.map((review) => {
@@ -106,6 +133,10 @@ export default async function StorePage({ params }: Props) {
             );
           })}
         </ul>
+      </section>
+
+      <section style={{ marginTop: 28 }}>
+        <AdPlaceholder label="페이지 하단" />
       </section>
     </main>
   );
