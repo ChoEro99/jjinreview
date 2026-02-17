@@ -2,6 +2,13 @@
 
 import { useEffect } from "react";
 
+// Extend the Window interface to include adsbygoogle
+declare global {
+  interface Window {
+    adsbygoogle: unknown[];
+  }
+}
+
 type AdSenseProps = {
   label: string;
   slot?: string;
@@ -19,7 +26,7 @@ export function AdSense({ label, slot, format, style }: AdSenseProps) {
   useEffect(() => {
     if (hasRequiredValues && typeof window !== "undefined") {
       try {
-        ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
+        (window.adsbygoogle = window.adsbygoogle || []).push({});
       } catch (err) {
         console.error("AdSense error:", err);
       }
