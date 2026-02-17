@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #faf7f3;
+  --foreground: #4a3f35;
+  --card-bg: #ffffff;
+  --card-border: #d4c7ba;
+  --card-hover: #ede5d8;
+  --button-primary: #c4a882;
+  --button-hover: #d4b892;
+  --highlight-yellow: #fff3cd;
+  --text-muted: #7a6f65;
 }
 
 @theme inline {
@@ -17,3 +24,30 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Hover utility classes */
+.hover-card {
+  transition: all 0.2s ease;
+}
+
+.hover-card:hover {
+  background: var(--card-hover);
+  box-shadow: 0 2px 8px rgba(74, 63, 53, 0.1);
+}
+
+.hover-button {
+  transition: all 0.2s ease;
+}
+
+.hover-button:hover {
+  filter: brightness(1.1);
+}
+
+.hover-list-item {
+  transition: all 0.2s ease;
+}
+
+.hover-list-item:hover {
+  background: #f5f0e8;
+}
+
