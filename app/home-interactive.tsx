@@ -269,7 +269,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 // Compute rating trust score for each store
                 const ratingTrust = computeRatingTrustScore(
                   store.externalRating ?? null,
-                  store.summary.externalReviewCount ?? 0
+                  Math.max(store.summary.externalReviewCount ?? 0, store.externalReviewCount ?? 0)
                 );
 
                 return (
@@ -300,7 +300,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                         ⭐ {store.summary.weightedRating?.toFixed(1) ?? "-"}
                       </span>
                       <span style={{ color: "#28502E" }}>
-                        리뷰 {Math.max(store.summary.reviewCount, store.summary.externalReviewCount)}
+                        {/* Use max of summary (cached) and direct externalReviewCount to handle stale cache */}
+                        리뷰 {Math.max(store.summary.reviewCount, store.summary.externalReviewCount, store.externalReviewCount ?? 0)}
                       </span>
                       <span style={{ color: "#28502E" }}>{ratingTrust.emoji} {ratingTrust.totalScore}점</span>
                     </div>

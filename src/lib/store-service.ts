@@ -1962,7 +1962,124 @@ async function computeTopRankWithin1KmBySameLabel(store: StoreBase) {
     return (b.reviewCount as number) - (a.reviewCount as number);
   });
 
-  if (!nearby.length) return null;
+  if (!nearby.length) {
+    // If no nearby stores found in DB, try Google API fallback
+    const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      return null;
+    }
+
+    try {
+      const nearbyRes = await fetchGoogleJsonWithRetry<{
+        places?: Array<{
+          id?: string;
+          displayName?: { text?: string };
+          formattedAddress?: string;
+          rating?: number;
+          userRatingCount?: number;
+        }>;
+      }>("https://places.googleapis.com/v1/places:searchNearby", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask":
+            "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount",
+        },
+        body: JSON.stringify({
+          includedTypes: ["restaurant"],
+          maxResultCount: 20,
+          languageCode: "ko",
+          regionCode: "KR",
+          locationRestriction: {
+            circle: {
+              center: { latitude: lat, longitude: lon },
+              radius: 1000,
+            },
+          },
+        }),
+      });
+
+      const candidates = (nearbyRes.places ?? [])
+        .map((place) => ({
+          id: place.id ?? "",
+          name: place.displayName?.text ?? "주변 가게",
+          address: place.formattedAddress ?? null,
+          rating:
+            typeof place.rating === "number" && Number.isFinite(place.rating)
+              ? place.rating
+              : null,
+          reviewCount:
+            typeof place.userRatingCount === "number" && Number.isFinite(place.userRatingCount)
+              ? Math.max(0, Math.round(place.userRatingCount))
+              : 0,
+        }))
+        .filter((row) => typeof row.rating === "number")
+        .filter((row) => reliabilityLabelBySnapshot(row.rating, row.reviewCount) === baseLabel)
+        .sort((a, b) => {
+          if ((b.rating as number) !== (a.rating as number)) return (b.rating as number) - (a.rating as number);
+          return b.reviewCount - a.reviewCount;
+        });
+
+      const self = {
+        id: `store-${store.id}`,
+        name: store.name,
+        address: store.address ?? null,
+        rating: store.externalRating,
+        reviewCount: store.externalReviewCount ?? 0,
+      };
+      const mergedRaw = [...candidates, self]
+        .filter((row) => typeof row.rating === "number")
+        .sort((a, b) => {
+          if ((b.rating as number) !== (a.rating as number)) return (b.rating as number) - (a.rating as number);
+          return b.reviewCount - a.reviewCount;
+        });
+
+      const mergedMap = new Map<string, (typeof mergedRaw)[number]>();
+      for (const row of mergedRaw) {
+        const key = `${normalizeNameKey(row.name ?? "")}|${normalizeAddressKey(row.address ?? null)}`;
+        const prev = mergedMap.get(key);
+        if (!prev) {
+          mergedMap.set(key, row);
+          continue;
+        }
+        if (row.id === self.id) {
+          mergedMap.set(key, row);
+        }
+      }
+      const merged = Array.from(mergedMap.values()).sort((a, b) => {
+        if ((b.rating as number) !== (a.rating as number)) return (b.rating as number) - (a.rating as number);
+        return b.reviewCount - a.reviewCount;
+      });
+
+      const selfIndex = merged.findIndex((row) => row.id === self.id);
+      if (selfIndex >= 0) {
+        const nextRank = selfIndex + 1;
+        const nextTotal = merged.length;
+        const nextTopPercent = Math.max(1, Math.round((nextRank / nextTotal) * 100));
+        const nearbyComparedStores = merged.map((row, idx) => ({
+          id: row.id,
+          name: row.name,
+          address: row.address,
+          rank: idx + 1,
+          rating: row.rating as number,
+          reviewCount: row.reviewCount,
+          isSelf: row.id === self.id,
+        }));
+        return {
+          rank: nextRank,
+          total: nextTotal,
+          topPercent: nextTopPercent,
+          label: baseLabel,
+          comparedStores: nearbyComparedStores,
+        };
+      }
+    } catch {
+      // Ignore nearby API failure
+    }
+
+    return null;
+  }
   const index = Math.max(
     0,
     nearby.findIndex((row) => row.id === store.id)
