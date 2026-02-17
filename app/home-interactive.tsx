@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 
 // Rating trust score label mapping
@@ -122,6 +122,16 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     };
   }, []);
 
+  const handleNextPhoto = useCallback(() => {
+    if (!storeDetail?.photosFull) return;
+    setCurrentPhotoIndex((prev) => (prev + 1) % storeDetail.photosFull!.length);
+  }, [storeDetail?.photosFull]);
+
+  const handlePrevPhoto = useCallback(() => {
+    if (!storeDetail?.photosFull) return;
+    setCurrentPhotoIndex((prev) => (prev - 1 + storeDetail.photosFull!.length) % storeDetail.photosFull!.length);
+  }, [storeDetail?.photosFull]);
+
   // Keyboard navigation for photo modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -140,21 +150,11 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [photoModalOpen, currentPhotoIndex, storeDetail]);
+  }, [photoModalOpen, handleNextPhoto, handlePrevPhoto]);
 
   const handlePhotoClick = (index: number) => {
     setCurrentPhotoIndex(index);
     setPhotoModalOpen(true);
-  };
-
-  const handleNextPhoto = () => {
-    if (!storeDetail?.photosFull) return;
-    setCurrentPhotoIndex((prev) => (prev + 1) % storeDetail.photosFull!.length);
-  };
-
-  const handlePrevPhoto = () => {
-    if (!storeDetail?.photosFull) return;
-    setCurrentPhotoIndex((prev) => (prev - 1 + storeDetail.photosFull!.length) % storeDetail.photosFull!.length);
   };
 
   const handleSearch = async (e: React.FormEvent) => {
