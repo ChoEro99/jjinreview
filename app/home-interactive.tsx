@@ -104,6 +104,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   
   // Cache for store details to avoid re-fetching
   const storeDetailCache = useRef<Map<number, StoreDetail>>(new Map());
+  // Track the currently selected store for async operations
+  const selectedStoreIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -191,6 +193,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
   const handleStoreClick = async (storeId: number) => {
     setSelectedStoreId(storeId);
+    selectedStoreIdRef.current = storeId; // Update ref for async checks
+    setFailedPhotos(new Set()); // Reset failed photos when switching stores
     
     const cached = storeDetailCache.current.get(storeId);
     if (cached) {
@@ -201,7 +205,6 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       // No cache - show loading spinner
       setIsLoadingDetail(true);
       setStoreDetail(null);
-      setFailedPhotos(new Set());
     }
 
     // Always fetch fresh data (revalidate)
@@ -212,12 +215,9 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         if (data.ok) {
           storeDetailCache.current.set(storeId, data);
           // Only update if this store is still selected
-          setSelectedStoreId((currentId) => {
-            if (currentId === storeId) {
-              setStoreDetail(data);
-            }
-            return currentId;
-          });
+          if (selectedStoreIdRef.current === storeId) {
+            setStoreDetail(data);
+          }
         }
       }
     } catch (error) {
