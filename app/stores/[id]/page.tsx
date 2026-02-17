@@ -34,6 +34,10 @@ interface StoreDetail {
       reasonSummary: string;
     } | null;
   }>;
+  photos?: Array<{
+    url: string;
+    label: string;
+  }>;
 }
 
 const ADSENSE_CLIENT = "ca-pub-6051453612452994";
@@ -91,6 +95,44 @@ export default async function StorePage({ params }: Props) {
 
       <h1 style={{ marginTop: 12, fontSize: 30, fontWeight: 800, color: "#28502E" }}>{detail.store.name}</h1>
       <div style={{ marginTop: 6, color: "#8C7051" }}>{detail.store.address ?? "-"}</div>
+
+      {/* 가게 사진 */}
+      {detail.photos && detail.photos.length > 0 && (
+        <div style={{ marginTop: 20, marginBottom: 20 }}>
+          {/* 대표 사진 */}
+          {detail.photos[0] && (
+            <img
+              src={detail.photos[0].url}
+              alt={`${detail.store.name} 대표 사진`}
+              style={{
+                width: "100%",
+                maxHeight: 250,
+                objectFit: "cover",
+                borderRadius: 12,
+                marginBottom: 8,
+              }}
+            />
+          )}
+          {/* 리뷰 사진 */}
+          {detail.photos.length > 1 && (
+            <div style={{ display: "flex", gap: 8 }}>
+              {detail.photos.slice(1, 3).map((photo, idx) => (
+                <img
+                  key={idx}
+                  src={photo.url}
+                  alt={`${detail.store.name} 리뷰 사진 ${idx + 1}`}
+                  style={{
+                    flex: 1,
+                    maxHeight: 150,
+                    objectFit: "cover",
+                    borderRadius: 8,
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <section
         style={{

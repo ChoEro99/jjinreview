@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 const adsenseClient = "ca-pub-6051453612452994";
 
 export const metadata: Metadata = {
-  title: "찐리뷰",
-  description: "광고성 리뷰 필터 기반 가게 리뷰 종합 평점 서비스",
+  title: "리뷰랩",
+  description: "이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 수치",
 };
 
 export default function RootLayout({

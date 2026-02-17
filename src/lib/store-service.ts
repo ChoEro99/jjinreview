@@ -878,6 +878,34 @@ export async function getStoreDetail(id: number) {
   const normalizedStore = await ensureStoreGeo(normalizedStoreRaw);
   await importNearbyRestaurantsForStore(normalizedStore).catch(() => null);
 
+  // Fetch photos from Google Places API
+  const photos: Array<{ url: string; label: string }> = [];
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (apiKey) {
+    try {
+      const place = await findGooglePlaceForStore(apiKey, {
+        name: normalizedStore.name,
+        address: normalizedStore.address,
+      });
+      
+      if (place?.photos && place.photos.length > 0) {
+        // Take up to 3 photos: first as main, rest as review photos
+        const photoSlice = place.photos.slice(0, 3);
+        photoSlice.forEach((photo, idx) => {
+          if (photo.name) {
+            photos.push({
+              url: buildGooglePhotoUrl(photo.name, apiKey),
+              label: idx === 0 ? "대표" : "리뷰",
+            });
+          }
+        });
+      }
+    } catch (error) {
+      // Gracefully handle photo fetch errors - just leave photos empty
+      console.error("Failed to fetch photos:", error);
+    }
+  }
+
   const baseReviews = await loadReviewsByStoreIds([id]);
   const reviews = await enrichReviews(baseReviews);
   reviews.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
@@ -908,6 +936,7 @@ export async function getStoreDetail(id: number) {
       radiusKm: 1,
       ratingTrustScore,
     },
+    photos,
   };
 }
 
@@ -1503,6 +1532,11 @@ type GooglePlaceSearchResponse = {
     rating?: number;
     userRatingCount?: number;
     location?: { latitude?: number; longitude?: number };
+    photos?: Array<{
+      name?: string;
+      widthPx?: number;
+      heightPx?: number;
+    }>;
   }>;
 };
 
@@ -1585,13 +1619,17 @@ async function findGooglePlaceForStore(apiKey: string, store: { name: string; ad
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
         "X-Goog-FieldMask":
-          "places.id,places.name,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location",
+          "places.id,places.name,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location,places.photos",
       },
       body: JSON.stringify(payload),
     }
   );
 
   return search.places?.[0] ?? null;
+}
+
+function buildGooglePhotoUrl(photoName: string, apiKey: string, maxWidth = 600, maxHeight = 400): string {
+  return `https://places.googleapis.com/v1/${photoName}/media?maxHeightPx=${maxHeight}&maxWidthPx=${maxWidth}&key=${apiKey}`;
 }
 
 function reliabilityLabelBySnapshot(rating: number | null, reviewCount: number) {
