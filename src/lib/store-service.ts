@@ -911,8 +911,24 @@ export async function getStoreDetail(id: number) {
   }
 
   if (!storeData) throw new Error("store not found");
-  const normalizedStoreRaw = await refreshStoreExternalSnapshotIfStale(id);
-  const normalizedStore = await ensureStoreGeo(normalizedStoreRaw);
+  
+  // Try to refresh external snapshot, fallback to existing data on error
+  let normalizedStoreRaw: StoreBase;
+  try {
+    normalizedStoreRaw = await refreshStoreExternalSnapshotIfStale(id);
+  } catch (error) {
+    console.error("Failed to refresh external snapshot, using existing data:", error);
+    normalizedStoreRaw = normalizeStoreRow(storeData);
+  }
+  
+  // Try to ensure geo data, continue without it on error
+  let normalizedStore: StoreBase;
+  try {
+    normalizedStore = await ensureStoreGeo(normalizedStoreRaw);
+  } catch (error) {
+    console.error("Failed to ensure geo data, continuing without it:", error);
+    normalizedStore = normalizedStoreRaw;
+  }
   
   // Parallelize independent tasks
   const [, photosResult, baseReviews] = await Promise.all([
@@ -956,7 +972,15 @@ export async function getStoreDetail(id: number) {
   reviews.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 
   const summary = summarizeReviews(reviews, normalizedStore.externalRating, normalizedStore.externalReviewCount ?? null);
-  const rankInsight = await computeTopRankWithin1KmBySameLabel(normalizedStore);
+  
+  // Try to compute rank insight, fallback to null on error
+  let rankInsight: Awaited<ReturnType<typeof computeTopRankWithin1KmBySameLabel>> = null;
+  try {
+    rankInsight = await computeTopRankWithin1KmBySameLabel(normalizedStore);
+  } catch (error) {
+    console.error("Failed to compute rank insight, using null:", error);
+  }
+  
   const reliabilityLabel = reliabilityLabelBySnapshot(
     normalizedStore.externalRating,
     normalizedStore.externalReviewCount ?? 0
