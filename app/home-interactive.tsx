@@ -7,9 +7,6 @@ import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 const RATING_TRUST_LABEL_MAPPING: Record<string, string> = {
   "매우 신뢰": "안정적 평점",
   "신뢰 가능": "안정적 평점",
-  "보통": "보통 평점",
-  "주의 필요": "주의 필요",
-  "신뢰 어려움": "신뢰 어려움",
 };
 
 interface StoreBase {
