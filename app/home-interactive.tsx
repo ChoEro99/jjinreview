@@ -186,9 +186,9 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
           textAlign: "center",
         }}
       >
-        <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>찐리뷰</h1>
+        <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>리뷰랩</h1>
         <p style={{ marginTop: 8, fontSize: 16, opacity: 1, color: "#e8dfc9" }}>
-          AI가 분석하는 진짜 리뷰, 광고 의심 리뷰를 걸러내는 신뢰할 수 있는 리뷰 플랫폼
+          이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 수치
         </p>
       </header>
 
