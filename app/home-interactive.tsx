@@ -400,16 +400,16 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                   marginBottom: 16,
                 }}
               >
-                {/* Main content: store info on left, photos on right (desktop) */}
+                {/* Main content: store info with photos below */}
                 <div
                   style={{
-                    display: isMobile ? "block" : "flex",
+                    display: "block",
                     gap: 24,
                     alignItems: "flex-start",
                   }}
                 >
-                  {/* Left side: Store info */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* Store info */}
+                  <div style={{ minWidth: 0 }}>
                     {/* 가게 이름 */}
                     <div style={{ fontSize: 28, fontWeight: 800, color: "#28502E", marginBottom: 16 }}>
                       🍽 {storeDetail.store.name}
@@ -461,22 +461,21 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                     </div>
                   </div>
 
-                  {/* Right side: Photos (desktop only, below on mobile) */}
+                  {/* Photos section below store info */}
                   {storeDetail.photos && storeDetail.photos.length > 0 && (
                     <div
                       style={{
-                        width: isMobile ? "100%" : "320px",
-                        flexShrink: 0,
-                        marginTop: isMobile ? 16 : 0,
+                        width: "100%",
+                        marginTop: 16,
                       }}
                     >
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
                         {storeDetail.photos.slice(0, 3).map((photoUrl, idx) => (
                           <div
                             key={idx}
                             style={{
                               width: "100%",
-                              height: "100px",
+                              height: "160px",
                               borderRadius: 8,
                               overflow: "hidden",
                               background: failedPhotos.has(idx) ? "rgba(140, 112, 81, 0.2)" : "transparent",
