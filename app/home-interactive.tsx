@@ -125,12 +125,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
   const handleNextPhoto = useCallback(() => {
     if (!storeDetail?.photosFull) return;
-    setCurrentPhotoIndex((prev) => (prev + 1) % storeDetail.photosFull.length);
+    setCurrentPhotoIndex((prev) => (prev + 1) % storeDetail.photosFull!.length);
   }, [storeDetail?.photosFull]);
 
   const handlePrevPhoto = useCallback(() => {
     if (!storeDetail?.photosFull) return;
-    setCurrentPhotoIndex((prev) => (prev - 1 + storeDetail.photosFull.length) % storeDetail.photosFull.length);
+    setCurrentPhotoIndex((prev) => (prev - 1 + storeDetail.photosFull!.length) % storeDetail.photosFull!.length);
   }, [storeDetail?.photosFull]);
 
   // Keyboard navigation for photo modal
