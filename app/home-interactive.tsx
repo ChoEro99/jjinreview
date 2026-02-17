@@ -222,7 +222,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
           }
         } else {
           // API returned ok: false - keep cached data if available
-          console.error("API returned error:", data?.error);
+          console.error("API returned error for store", storeId, ":", data?.error);
           if (!cached) {
             // No cache available - set storeDetail to null to show error message
             setStoreDetail(null);
@@ -230,7 +230,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         }
       } else {
         // HTTP error (4xx, 5xx) - keep cached data if available
-        console.error("HTTP error:", response.status, response.statusText);
+        console.error("HTTP error for store", storeId, ":", response.status, response.statusText);
         if (!cached) {
           // No cache available - set storeDetail to null to show error message
           setStoreDetail(null);
