@@ -1678,6 +1678,7 @@ function getCachedGooglePlace(cacheKey: string): GooglePlace | null | undefined 
 
 function setCachedGooglePlace(cacheKey: string, place: GooglePlace | null): void {
   // Enforce max cache size with simple LRU: remove oldest entries
+  // Note: O(n) iteration is acceptable for a small cache size of 500 entries
   if (googlePlaceCache.size >= GOOGLE_PLACE_CACHE_MAX_SIZE) {
     let oldestKey: string | null = null;
     let oldestTime = Date.now();
@@ -1701,7 +1702,8 @@ function setCachedGooglePlace(cacheKey: string, place: GooglePlace | null): void
 }
 
 async function findGooglePlaceForStore(apiKey: string, store: { name: string; address: string | null }) {
-  const cacheKey = `${store.name}|${store.address ?? ""}`;
+  // Use JSON.stringify for cache key to avoid delimiter collisions
+  const cacheKey = JSON.stringify({ name: store.name, address: store.address ?? "" });
   
   // Check cache first
   const cached = getCachedGooglePlace(cacheKey);
@@ -2568,6 +2570,14 @@ async function searchGoogleNearbyRestaurantsAroundAddress(keyword: string, size 
   });
 }
 
+/**
+ * Batch process store creation to optimize parallel API calls.
+ * Creates stores in batches to balance performance and avoid overwhelming the database.
+ * 
+ * @param candidates - Array of store candidates to create
+ * @param batchSize - Number of stores to create in parallel per batch (default: 5)
+ * @returns Array of created stores with creation status
+ */
 async function batchCreateStores(
   candidates: Array<{ name: string | null; address: string | null; latitude: number | null; longitude: number | null }>,
   batchSize = 5
