@@ -84,6 +84,10 @@ interface StoreDetail {
       reasonSummary: string;
     } | null;
   }>;
+  photos?: Array<{
+    url: string;
+    label: string;
+  }>;
 }
 
 const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
@@ -361,6 +365,44 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 <div style={{ fontSize: 28, fontWeight: 800, color: "#28502E", marginBottom: 16 }}>
                   🍽 {storeDetail.store.name}
                 </div>
+
+                {/* 가게 사진 */}
+                {storeDetail.photos && storeDetail.photos.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    {/* 대표 사진 */}
+                    {storeDetail.photos[0] && (
+                      <img
+                        src={storeDetail.photos[0].url}
+                        alt={`${storeDetail.store.name} 대표 사진`}
+                        style={{
+                          width: "100%",
+                          maxHeight: 250,
+                          objectFit: "cover",
+                          borderRadius: 12,
+                          marginBottom: 8,
+                        }}
+                      />
+                    )}
+                    {/* 리뷰 사진 */}
+                    {storeDetail.photos.length > 1 && (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {storeDetail.photos.slice(1, 3).map((photo, idx) => (
+                          <img
+                            key={idx}
+                            src={photo.url}
+                            alt={`${storeDetail.store.name} 리뷰 사진 ${idx + 1}`}
+                            style={{
+                              flex: 1,
+                              maxHeight: 150,
+                              objectFit: "cover",
+                              borderRadius: 8,
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* 평점 */}
                 {storeDetail.insight?.rating !== null && storeDetail.insight?.rating !== undefined && (
