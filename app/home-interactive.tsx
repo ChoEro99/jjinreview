@@ -6,7 +6,7 @@ interface HomeInteractiveProps {
   showDetailPane?: boolean;
 }
 
-const HomeInteractive = ({ isMobile, showDetailPane }: HomeInteractiveProps) => {
+const HomeInteractive = ({ stores, isMobile, showDetailPane }: HomeInteractiveProps) => {
   // Other states and functions...
 
   return (
