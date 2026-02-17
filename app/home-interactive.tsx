@@ -387,7 +387,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                   
                   const rank = selfStore.rank;
                   const total = storeDetail.insight.comparedStores.length;
-                  const percentile = Math.round((rank / total) * 100);
+                  const percentile = Math.round(((total - rank + 1) / total) * 100);
                   
                   return (
                     <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E", marginBottom: 16 }}>
@@ -398,7 +398,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
                 {/* 부가 정보 한 줄 */}
                 <div style={{ fontSize: 13, color: "#8C7051" }}>
-                  리뷰 {storeDetail.summary.reviewCount}개 · 같은 안정성 라벨끼리 비교 · {storeDetail.store.address ?? "주소 정보 없음"}
+                  리뷰 {storeDetail.summary.reviewCount}개 · 반경 1km 내 가게 비교 · {storeDetail.store.address ?? "주소 정보 없음"}
                 </div>
               </div>
 
