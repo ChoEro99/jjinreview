@@ -374,8 +374,15 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                   const mappedLabel = RATING_TRUST_LABEL_MAPPING[storeDetail.insight.ratingTrustScore.label] || storeDetail.insight.ratingTrustScore.label;
                   
                   return (
-                    <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E", marginBottom: 12 }}>
-                      {storeDetail.insight.ratingTrustScore.emoji} {mappedLabel}
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E", marginBottom: 6 }}>
+                        {storeDetail.insight.ratingTrustScore.emoji} {mappedLabel}
+                      </div>
+                      <div style={{ fontSize: 14, color: "#8C7051", paddingLeft: 4 }}>
+                        총점 {storeDetail.insight.ratingTrustScore.totalScore}점 
+                        (표본 크기 {storeDetail.insight.ratingTrustScore.breakdown.sampleSize}점 · 
+                        자연스러움 {storeDetail.insight.ratingTrustScore.breakdown.naturalness}점)
+                      </div>
                     </div>
                   );
                 })()}
@@ -426,6 +433,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                   <div style={{ border: "1px solid rgba(140, 112, 81, 0.4)", borderRadius: 12, background: "rgba(140, 112, 81, 0.06)", overflow: "hidden" }}>
                     {storeDetail.insight.comparedStores.map((comparedStore) => {
                       const isHovered = hoveredCompareId === comparedStore.id;
+                      // Compute trust score for each compared store
+                      const trustScore = computeRatingTrustScore(comparedStore.rating, comparedStore.reviewCount);
                       return (
                         <div
                           key={comparedStore.id}
@@ -456,6 +465,9 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                           )}
                           <span style={{ marginLeft: 8, color: "#8C7051" }}>
                             · ⭐{comparedStore.rating.toFixed(1)} · 리뷰 {comparedStore.reviewCount}
+                          </span>
+                          <span style={{ marginLeft: 8, color: "#28502E" }}>
+                            · {trustScore.emoji} {trustScore.totalScore}점
                           </span>
                         </div>
                       );
