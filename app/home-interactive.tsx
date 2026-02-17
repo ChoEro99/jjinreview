@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 
 interface StoreBase {
   id: number;
@@ -8,6 +9,8 @@ interface StoreBase {
   address: string | null;
   latitude: number | null;
   longitude: number | null;
+  externalRating?: number | null;
+  externalReviewCount?: number | null;
 }
 
 interface StoreSummary {
@@ -255,7 +258,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 const isSelected = selectedStoreId === store.id;
                 const isHovered = hoveredCardId === store.id;
                 const adPct = Math.round(store.summary.adSuspectRatio * 100);
-                const trustPoint = Math.round(store.summary.trustScore * 100);
+                
+                // Compute rating trust score for each store
+                const ratingTrust = computeRatingTrustScore(
+                  store.externalRating ?? null,
+                  store.summary.externalReviewCount ?? 0
+                );
 
                 return (
                   <div
@@ -285,10 +293,10 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                         ⭐ {store.summary.weightedRating?.toFixed(1) ?? "-"}
                       </span>
                       <span style={{ color: "#4a3f35" }}>리뷰 {store.summary.reviewCount}</span>
+                      <span style={{ color: "#4a3f35" }}>{ratingTrust.emoji} {ratingTrust.totalScore}점</span>
                       <span style={{ color: adPct >= 30 ? "#e53e3e" : "#7a6f65" }}>
                         광고의심 {adPct}%
                       </span>
-                      <span style={{ color: "#4a3f35" }}>신뢰도 {trustPoint}점</span>
                     </div>
                   </div>
                 );
