@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/analyze-reviews?limit=200",
+      "schedule": "10 3 * * *"
+    }
+  ]
+}
