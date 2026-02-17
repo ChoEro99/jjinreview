@@ -73,8 +73,19 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     };
     
     checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+    
+    // Debounce resize event to improve performance
+    let resizeTimeout: NodeJS.Timeout;
+    const debouncedCheckMobile = () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(checkMobile, 150);
+    };
+    
+    window.addEventListener("resize", debouncedCheckMobile);
+    return () => {
+      clearTimeout(resizeTimeout);
+      window.removeEventListener("resize", debouncedCheckMobile);
+    };
   }, []);
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -126,6 +137,14 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   };
 
   const showDetailPane = selectedStoreId !== null;
+
+  // Calculate combined ad risk probability from individual risk scores
+  const calculateCombinedAdRisk = (adRisk: number, undisclosedAdRisk: number): number => {
+    // Formula: P(A or B) = 1 - P(not A) * P(not B)
+    return 1 - (1 - adRisk) * (1 - undisclosedAdRisk);
+  };
+
+  const HEADER_AND_SEARCH_HEIGHT = 280; // Height of header + search form + padding
 
   return (
     <div style={{ minHeight: "100vh", background: "#f9f9f9" }}>
@@ -199,7 +218,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               총 {stores.length}개 가게
             </div>
 
-            <div style={{ maxHeight: "calc(100vh - 280px)", overflowY: "auto" }}>
+            <div style={{ maxHeight: `calc(100vh - ${HEADER_AND_SEARCH_HEIGHT}px)`, overflowY: "auto" }}>
               {stores.map((store) => {
                 const isSelected = selectedStoreId === store.id;
                 const adPct = Math.round(store.summary.adSuspectRatio * 100);
@@ -325,14 +344,15 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 <div style={{ display: "grid", gap: 12 }}>
                   {storeDetail.reviews.map((review) => {
                     const adAny = review.latestAnalysis
-                      ? 1 -
-                        (1 - review.latestAnalysis.adRisk) *
-                          (1 - review.latestAnalysis.undisclosedAdRisk)
+                      ? calculateCombinedAdRisk(
+                          review.latestAnalysis.adRisk,
+                          review.latestAnalysis.undisclosedAdRisk
+                        )
                       : null;
 
                     return (
                       <div
-                        key={`${review.source}-${review.id}-${review.createdAt}`}
+                        key={`${review.source}-${review.id}`}
                         style={{
                           border: "1px solid #ddd",
                           borderRadius: 12,
