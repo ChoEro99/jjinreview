@@ -61,7 +61,7 @@ type Props = {
     latitude: number;
     longitude: number;
     category: "food" | "cafe" | "spot";
-  }>; 
+  }>;
   selectedPlace?: {
     id: string;
     name: string;
@@ -87,7 +87,7 @@ type Props = {
       content: string;
       authorName: string | null;
       createdAt: string;
-    }>; 
+    }>;
   } | null;
   detailLoading?: boolean;
 };
