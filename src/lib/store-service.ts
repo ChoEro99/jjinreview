@@ -313,7 +313,11 @@ function metricRowToSummary(metric: StoreMetricRow): StoreSummary {
   };
 }
 
-function summarizeReviews(reviews: ReviewRecord[], fallbackExternalRating: number | null): StoreSummary {
+function summarizeReviews(
+  reviews: ReviewRecord[],
+  fallbackExternalRating: number | null,
+  fallbackExternalReviewCount?: number | null
+): StoreSummary {
   const inappReviewCount = reviews.filter((review) => review.source === "inapp").length;
   const externalReviewCount = reviews.filter((review) => review.source === "external").length;
 
@@ -372,6 +376,12 @@ function summarizeReviews(reviews: ReviewRecord[], fallbackExternalRating: numbe
   const trustScore = reviewCount > 0 ? round4(trustSum / reviewCount) : 0.5;
   const positiveRatio = ratingWeightSum > 0 ? round4(positiveWeightSum / ratingWeightSum) : 0;
 
+  // Use fallback external review count when actual external reviews are not available
+  const effectiveExternalReviewCount = Math.max(
+    externalReviewCount,
+    fallbackExternalReviewCount ?? 0
+  );
+
   return {
     weightedRating,
     adSuspectRatio,
@@ -379,7 +389,7 @@ function summarizeReviews(reviews: ReviewRecord[], fallbackExternalRating: numbe
     positiveRatio,
     reviewCount,
     inappReviewCount,
-    externalReviewCount,
+    externalReviewCount: effectiveExternalReviewCount,
     lastAnalyzedAt,
   };
 }
@@ -622,7 +632,7 @@ export async function recomputeStoreMetrics(storeId: number) {
   const sb = supabaseServer();
   const { data: store, error: storeError } = await sb
     .from("stores")
-    .select("id, external_rating")
+    .select("id, external_rating, external_review_count")
     .eq("id", storeId)
     .single();
 
@@ -633,7 +643,8 @@ export async function recomputeStoreMetrics(storeId: number) {
 
   const summary = summarizeReviews(
     reviews,
-    toNumber((store as { external_rating: unknown }).external_rating)
+    toNumber((store as { external_rating: unknown }).external_rating),
+    toNumber((store as { external_review_count: unknown }).external_review_count)
   );
 
   await upsertStoreMetric(storeId, summary);
@@ -691,7 +702,11 @@ export async function getStoresWithSummary() {
     computedSummaryMap = new Map(
       missingStoreIds.map((storeId) => {
         const store = normalizedStores.find((row) => row.id === storeId);
-        const summary = summarizeReviews(grouped.get(storeId) ?? [], store?.externalRating ?? null);
+        const summary = summarizeReviews(
+          grouped.get(storeId) ?? [],
+          store?.externalRating ?? null,
+          store?.externalReviewCount ?? null
+        );
         return [storeId, summary] as const;
       })
     );
@@ -702,7 +717,7 @@ export async function getStoresWithSummary() {
     const summary = metric
       ? metricRowToSummary(metric)
       : computedSummaryMap.get(store.id) ??
-        summarizeReviews([], store.externalRating);
+        summarizeReviews([], store.externalRating, store.externalReviewCount ?? null);
 
     return {
       ...store,
@@ -733,7 +748,11 @@ async function enrichStoresWithSummary(stores: StoreBase[]) {
     computedSummaryMap = new Map(
       missingStoreIds.map((storeId) => {
         const store = stores.find((row) => row.id === storeId);
-        const summary = summarizeReviews(grouped.get(storeId) ?? [], store?.externalRating ?? null);
+        const summary = summarizeReviews(
+          grouped.get(storeId) ?? [],
+          store?.externalRating ?? null,
+          store?.externalReviewCount ?? null
+        );
         return [storeId, summary] as const;
       })
     );
@@ -744,7 +763,7 @@ async function enrichStoresWithSummary(stores: StoreBase[]) {
     summary:
       metricMap.get(store.id)
         ? metricRowToSummary(metricMap.get(store.id) as StoreMetricRow)
-        : computedSummaryMap.get(store.id) ?? summarizeReviews([], store.externalRating),
+        : computedSummaryMap.get(store.id) ?? summarizeReviews([], store.externalRating, store.externalReviewCount ?? null),
   })) satisfies StoreWithSummary[];
 }
 
@@ -863,7 +882,7 @@ export async function getStoreDetail(id: number) {
   const reviews = await enrichReviews(baseReviews);
   reviews.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 
-  const summary = summarizeReviews(reviews, normalizedStore.externalRating);
+  const summary = summarizeReviews(reviews, normalizedStore.externalRating, normalizedStore.externalReviewCount ?? null);
   const rankInsight = await computeTopRankWithin1KmBySameLabel(normalizedStore);
   const reliabilityLabel = reliabilityLabelBySnapshot(
     normalizedStore.externalRating,
