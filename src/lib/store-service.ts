@@ -832,8 +832,7 @@ async function findRegisteredStoresByKeyword(keyword: string, limit = 20) {
     throw new Error(minimal.error.message);
   }
 
-  const byName = await queryBy("name");
-  const byAddress = await queryBy("address");
+  const [byName, byAddress] = await Promise.all([queryBy("name"), queryBy("address")]);
 
   const rows = [
     ...byName,
@@ -914,38 +913,45 @@ export async function getStoreDetail(id: number) {
   if (!storeData) throw new Error("store not found");
   const normalizedStoreRaw = await refreshStoreExternalSnapshotIfStale(id);
   const normalizedStore = await ensureStoreGeo(normalizedStoreRaw);
-  await importNearbyRestaurantsForStore(normalizedStore).catch(() => null);
-
-  // Fetch photos from Google Places API
-  const photos: string[] = [];
-  const photosFull: string[] = [];
-  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
-  if (apiKey) {
-    try {
-      const place = await findGooglePlaceForStore(apiKey, {
-        name: normalizedStore.name,
-        address: normalizedStore.address,
-      });
-      
-      if (place?.photos && place.photos.length > 0) {
-        // Take up to 3 photos
-        const photoSlice = place.photos.slice(0, 3);
-        photoSlice.forEach((photo) => {
-          if (photo.name) {
-            // Thumbnail version (400x400)
-            photos.push(buildGooglePhotoUrl(photo.name, apiKey, 400, 400));
-            // Full-size version (1200x900)
-            photosFull.push(buildGooglePhotoUrl(photo.name, apiKey, 1200, 900));
+  
+  // Parallelize independent tasks
+  const [, photosResult, baseReviews] = await Promise.all([
+    importNearbyRestaurantsForStore(normalizedStore).catch(() => null),
+    (async () => {
+      const photos: string[] = [];
+      const photosFull: string[] = [];
+      const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+      if (apiKey) {
+        try {
+          const place = await findGooglePlaceForStore(apiKey, {
+            name: normalizedStore.name,
+            address: normalizedStore.address,
+          });
+          
+          if (place?.photos && place.photos.length > 0) {
+            // Take up to 3 photos
+            const photoSlice = place.photos.slice(0, 3);
+            photoSlice.forEach((photo) => {
+              if (photo.name) {
+                // Thumbnail version (400x400)
+                photos.push(buildGooglePhotoUrl(photo.name, apiKey, 400, 400));
+                // Full-size version (1200x900)
+                photosFull.push(buildGooglePhotoUrl(photo.name, apiKey, 1200, 900));
+              }
+            });
           }
-        });
+        } catch (error) {
+          // Gracefully handle photo fetch errors - just leave photos empty
+          console.error("Failed to fetch photos:", error);
+        }
       }
-    } catch (error) {
-      // Gracefully handle photo fetch errors - just leave photos empty
-      console.error("Failed to fetch photos:", error);
-    }
-  }
+      return { photos, photosFull };
+    })(),
+    loadReviewsByStoreIds([id]),
+  ]);
 
-  const baseReviews = await loadReviewsByStoreIds([id]);
+  const photos = photosResult.photos;
+  const photosFull = photosResult.photosFull;
   const reviews = await enrichReviews(baseReviews);
   reviews.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 
@@ -1585,6 +1591,8 @@ type GooglePlaceSearchResponse = {
   }>;
 };
 
+type GooglePlace = NonNullable<GooglePlaceSearchResponse["places"]>[number];
+
 function isAddressLikeQuery(keyword: string) {
   return /(?:시|군|구|읍|면|동|로|길)/.test(keyword) || /\d{1,4}-?\d*/.test(keyword);
 }
@@ -1645,7 +1653,62 @@ async function fetchGoogleJsonWithRetry<T>(url: string, init: RequestInit, optio
   throw new Error("Google Places API 호출 실패");
 }
 
+// Memory cache for Google Places API results
+type GooglePlaceCacheEntry = {
+  place: GooglePlace | null;
+  timestamp: number;
+};
+
+const googlePlaceCache = new Map<string, GooglePlaceCacheEntry>();
+const GOOGLE_PLACE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const GOOGLE_PLACE_CACHE_MAX_SIZE = 500;
+
+function getCachedGooglePlace(cacheKey: string): GooglePlace | null | undefined {
+  const entry = googlePlaceCache.get(cacheKey);
+  if (!entry) return undefined;
+  
+  const age = Date.now() - entry.timestamp;
+  if (age > GOOGLE_PLACE_CACHE_TTL_MS) {
+    googlePlaceCache.delete(cacheKey);
+    return undefined;
+  }
+  
+  return entry.place;
+}
+
+function setCachedGooglePlace(cacheKey: string, place: GooglePlace | null): void {
+  // Enforce max cache size with simple LRU: remove oldest entries
+  if (googlePlaceCache.size >= GOOGLE_PLACE_CACHE_MAX_SIZE) {
+    let oldestKey: string | null = null;
+    let oldestTime = Date.now();
+    
+    for (const [key, entry] of googlePlaceCache.entries()) {
+      if (entry.timestamp < oldestTime) {
+        oldestTime = entry.timestamp;
+        oldestKey = key;
+      }
+    }
+    
+    if (oldestKey) {
+      googlePlaceCache.delete(oldestKey);
+    }
+  }
+  
+  googlePlaceCache.set(cacheKey, {
+    place,
+    timestamp: Date.now(),
+  });
+}
+
 async function findGooglePlaceForStore(apiKey: string, store: { name: string; address: string | null }) {
+  const cacheKey = `${store.name}|${store.address ?? ""}`;
+  
+  // Check cache first
+  const cached = getCachedGooglePlace(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+  
   const query = `${store.name} ${store.address ?? ""}`.trim();
   const payload = {
     textQuery: query,
@@ -1670,7 +1733,9 @@ async function findGooglePlaceForStore(apiKey: string, store: { name: string; ad
     }
   );
 
-  return search.places?.[0] ?? null;
+  const result = search.places?.[0] ?? null;
+  setCachedGooglePlace(cacheKey, result);
+  return result;
 }
 
 function buildGooglePhotoUrl(photoName: string, apiKey: string, maxWidth = 600, maxHeight = 400): string {
@@ -2503,6 +2568,34 @@ async function searchGoogleNearbyRestaurantsAroundAddress(keyword: string, size 
   });
 }
 
+async function batchCreateStores(
+  candidates: Array<{ name: string | null; address: string | null; latitude: number | null; longitude: number | null }>,
+  batchSize = 5
+): Promise<Array<{ store: StoreBase; created: boolean }>> {
+  const results: Array<{ store: StoreBase; created: boolean }> = [];
+  
+  for (let i = 0; i < candidates.length; i += batchSize) {
+    const batch = candidates.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map(async (row) => {
+        if (!row.name) return null;
+        return await createStore({
+          name: row.name,
+          address: row.address,
+          latitude: row.latitude,
+          longitude: row.longitude,
+        });
+      })
+    );
+    
+    for (const result of batchResults) {
+      if (result) results.push(result);
+    }
+  }
+  
+  return results;
+}
+
 export async function searchAndAutoRegisterStoreByKeyword(
   keyword: string,
   limit = 20,
@@ -2536,16 +2629,10 @@ export async function searchAndAutoRegisterStoreByKeyword(
     const googleCandidates = await searchGooglePlacesByKeyword(normalizedKeyword, fetchTarget);
     if (googleCandidates.length) {
       usedGoogle = true;
-      for (const row of googleCandidates) {
-        if (!row.name) continue;
-        const created = await createStore({
-          name: row.name,
-          address: row.address,
-          latitude: row.latitude,
-          longitude: row.longitude,
-        });
-        if (created.created) autoRegistered = true;
-        combined.set(created.store.id, created.store);
+      const createdStores = await batchCreateStores(googleCandidates, 5);
+      for (const { store, created } of createdStores) {
+        if (created) autoRegistered = true;
+        combined.set(store.id, store);
       }
     }
 
@@ -2556,16 +2643,10 @@ export async function searchAndAutoRegisterStoreByKeyword(
       );
       if (nearbyCandidates.length) {
         usedGoogle = true;
-        for (const row of nearbyCandidates) {
-          if (!row.name) continue;
-          const created = await createStore({
-            name: row.name,
-            address: row.address,
-            latitude: row.latitude,
-            longitude: row.longitude,
-          });
-          if (created.created) autoRegistered = true;
-          combined.set(created.store.id, created.store);
+        const createdStores = await batchCreateStores(nearbyCandidates, 5);
+        for (const { store, created } of createdStores) {
+          if (created) autoRegistered = true;
+          combined.set(store.id, store);
         }
       }
     }
@@ -2584,13 +2665,7 @@ export async function searchAndAutoRegisterStoreByKeyword(
   const enriched = await enrichStoresWithSummary(Array.from(combined.values()));
   const sorted = sortByNearest(enriched, userLocation);
   const page = sorted.slice(safeOffset, safeOffset + safeLimit);
-  const refreshedAll = await Promise.all(
-    page.map(async (row) => {
-      const latest = await refreshStoreExternalSnapshotIfStale(row.id);
-      return { ...row, ...latest };
-    })
-  );
-  const refreshed = refreshedAll;
+  const refreshed = page;
   const hasMore = sorted.length > safeOffset + safeLimit;
 
   return {
@@ -3235,7 +3310,7 @@ export async function getGoogleReviewsWithAiForStore(
   const maxAgeHours =
     typeof options?.maxAgeHours === "number" && Number.isFinite(options.maxAgeHours)
       ? Math.max(1, Math.min(24 * 365, Math.floor(options.maxAgeHours)))
-      : 24 * 30;
+      : 24 * 7;
 
   if (!forceRefresh) {
     const cached = await loadGoogleReviewCache(storeId);
@@ -3491,7 +3566,7 @@ export async function getNaverSignalsForStore(
   const maxAgeHours =
     typeof options?.maxAgeHours === "number" && Number.isFinite(options.maxAgeHours)
       ? Math.max(1, Math.min(24 * 365, Math.floor(options.maxAgeHours)))
-      : 24 * 30;
+      : 24 * 7;
   const display =
     typeof options?.display === "number" && Number.isFinite(options.display)
       ? Math.max(3, Math.min(15, Math.floor(options.display)))
