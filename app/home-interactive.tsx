@@ -401,13 +401,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 }}
               >
                 {/* Main content: store info with photos below */}
-                <div
-                  style={{
-                    display: "block",
-                    gap: 24,
-                    alignItems: "flex-start",
-                  }}
-                >
+                <div>
                   {/* Store info */}
                   <div style={{ minWidth: 0 }}>
                     {/* 가게 이름 */}
