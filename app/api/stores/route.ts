@@ -20,7 +20,6 @@ export async function POST(req: Request) {
       address?: string | null;
       latitude?: number | null;
       longitude?: number | null;
-      kakaoPlaceId?: string | null;
     };
 
     const name = typeof body.name === "string" ? body.name : "";
@@ -33,8 +32,6 @@ export async function POST(req: Request) {
       typeof body.longitude === "number" && Number.isFinite(body.longitude)
         ? body.longitude
         : null;
-    const kakaoPlaceId =
-      typeof body.kakaoPlaceId === "string" ? body.kakaoPlaceId : null;
 
     if (!name.trim()) {
       return NextResponse.json(
@@ -48,7 +45,6 @@ export async function POST(req: Request) {
       address,
       latitude,
       longitude,
-      kakaoPlaceId,
     });
 
     return NextResponse.json({

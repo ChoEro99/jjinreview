@@ -18,8 +18,6 @@ SUPABASE_SERVICE_ROLE_KEY=...
 CRON_SECRET=...
 OPENAI_API_KEY=... # 선택, 없으면 휴리스틱 엔진 사용
 OPENAI_REVIEW_MODEL=gpt-5-mini # 선택
-NEXT_PUBLIC_KAKAO_MAP_APP_KEY=... # 카카오맵 JavaScript 키
-KAKAO_REST_API_KEY=... # 카카오 로컬 REST API 키(장소 자동수집)
 ```
 
 ## 2) Supabase 스키마 적용
