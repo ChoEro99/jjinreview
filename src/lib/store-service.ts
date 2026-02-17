@@ -203,6 +203,44 @@ type StoreMetricRow = {
 
 const REVIEW_TABLE_CANDIDATES = ["reviews", "store_reviews"];
 
+/**
+ * Check if an address is in Korea by looking for Korean city/province names or keywords
+ */
+function isKoreanAddress(address: string | null): boolean {
+  if (!address) return false;
+  
+  const addressLower = address.toLowerCase();
+  
+  // Korean keywords
+  const koreanKeywords = ["대한민국", "south korea", "korea", "한국"];
+  if (koreanKeywords.some(keyword => addressLower.includes(keyword))) {
+    return true;
+  }
+  
+  // Korean cities and provinces (both in Korean and romanized forms)
+  const koreanCities = [
+    "서울", "seoul",
+    "부산", "busan",
+    "대구", "daegu",
+    "인천", "incheon",
+    "광주", "gwangju",
+    "대전", "daejeon",
+    "울산", "ulsan",
+    "세종", "sejong",
+    "경기", "gyeonggi",
+    "강원", "gangwon",
+    "충북", "chungbuk", "chungcheongbuk",
+    "충남", "chungnam", "chungcheongnam",
+    "전북", "jeonbuk", "jeollabuk",
+    "전남", "jeonnam", "jeollanam",
+    "경북", "gyeongbuk", "gyeongsangbuk",
+    "경남", "gyeongnam", "gyeongsangnam",
+    "제주", "jeju"
+  ];
+  
+  return koreanCities.some(city => addressLower.includes(city));
+}
+
 function isMissingColumnError(error: { code?: string } | null | undefined) {
   return error?.code === "42703" || error?.code === "PGRST204";
 }
@@ -879,7 +917,8 @@ export async function getStoreDetail(id: number) {
   await importNearbyRestaurantsForStore(normalizedStore).catch(() => null);
 
   // Fetch photos from Google Places API
-  const photos: Array<{ url: string; label: string }> = [];
+  const photos: string[] = [];
+  const photosFull: string[] = [];
   const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
   if (apiKey) {
     try {
@@ -889,14 +928,14 @@ export async function getStoreDetail(id: number) {
       });
       
       if (place?.photos && place.photos.length > 0) {
-        // Take up to 3 photos: first as main, rest as review photos
+        // Take up to 3 photos
         const photoSlice = place.photos.slice(0, 3);
-        photoSlice.forEach((photo, idx) => {
+        photoSlice.forEach((photo) => {
           if (photo.name) {
-            photos.push({
-              url: buildGooglePhotoUrl(photo.name, apiKey),
-              label: idx === 0 ? "대표" : "리뷰",
-            });
+            // Thumbnail version (400x400)
+            photos.push(buildGooglePhotoUrl(photo.name, apiKey, 400, 400));
+            // Full-size version (1200x900)
+            photosFull.push(buildGooglePhotoUrl(photo.name, apiKey, 1200, 900));
           }
         });
       }
@@ -937,6 +976,7 @@ export async function getStoreDetail(id: number) {
       ratingTrustScore,
     },
     photos,
+    photosFull,
   };
 }
 
@@ -958,6 +998,11 @@ export async function createStore(input: CreateStoreInput) {
 
   if (!name) {
     throw new Error("가게 이름은 필수입니다.");
+  }
+
+  // Filter out non-Korean addresses
+  if (address && !isKoreanAddress(address)) {
+    throw new Error("한국 주소만 등록할 수 있습니다.");
   }
 
   if (kakaoPlaceId) {
@@ -1896,9 +1941,16 @@ async function importNearbyRestaurantsForStore(store: StoreBase) {
   for (const place of nearbyRes.places ?? []) {
     const name = place.displayName?.text?.trim() ?? "";
     if (!name) continue;
+    
+    const address = place.formattedAddress ?? null;
+    // Skip non-Korean addresses
+    if (address && !isKoreanAddress(address)) {
+      continue;
+    }
+    
     const created = await createStore({
       name,
-      address: place.formattedAddress ?? null,
+      address,
       latitude:
         typeof place.location?.latitude === "number" && Number.isFinite(place.location.latitude)
           ? place.location.latitude

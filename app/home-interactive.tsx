@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 
 // Rating trust score label mapping
@@ -84,10 +84,8 @@ interface StoreDetail {
       reasonSummary: string;
     } | null;
   }>;
-  photos?: Array<{
-    url: string;
-    label: string;
-  }>;
+  photos?: string[];
+  photosFull?: string[];
 }
 
 const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
@@ -100,6 +98,9 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [isSearching, setIsSearching] = useState(false);
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
   const [hoveredCompareId, setHoveredCompareId] = useState<number | null>(null);
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [failedPhotos, setFailedPhotos] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     const checkMobile = () => {
@@ -121,6 +122,41 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       window.removeEventListener("resize", debouncedCheckMobile);
     };
   }, []);
+
+  const handleNextPhoto = useCallback(() => {
+    if (!storeDetail?.photosFull) return;
+    setCurrentPhotoIndex((prev) => (prev + 1) % storeDetail.photosFull.length);
+  }, [storeDetail?.photosFull]);
+
+  const handlePrevPhoto = useCallback(() => {
+    if (!storeDetail?.photosFull) return;
+    setCurrentPhotoIndex((prev) => (prev - 1 + storeDetail.photosFull.length) % storeDetail.photosFull.length);
+  }, [storeDetail?.photosFull]);
+
+  // Keyboard navigation for photo modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!photoModalOpen) return;
+      
+      if (e.key === "Escape") {
+        setPhotoModalOpen(false);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        handlePrevPhoto();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        handleNextPhoto();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [photoModalOpen, handleNextPhoto, handlePrevPhoto]);
+
+  const handlePhotoClick = (index: number) => {
+    setCurrentPhotoIndex(index);
+    setPhotoModalOpen(true);
+  };
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,6 +190,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     setSelectedStoreId(storeId);
     setIsLoadingDetail(true);
     setStoreDetail(null);
+    setFailedPhotos(new Set()); // Reset failed photos for new store
 
     try {
       const response = await fetch(`/api/stores/${storeId}`);
@@ -361,94 +398,290 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                   marginBottom: 16,
                 }}
               >
-                {/* 가게 이름 */}
-                <div style={{ fontSize: 28, fontWeight: 800, color: "#28502E", marginBottom: 16 }}>
-                  🍽 {storeDetail.store.name}
-                </div>
+                {/* Main content: store info on left, photos on right (desktop) */}
+                <div
+                  style={{
+                    display: isMobile ? "block" : "flex",
+                    gap: 24,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  {/* Left side: Store info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {/* 가게 이름 */}
+                    <div style={{ fontSize: 28, fontWeight: 800, color: "#28502E", marginBottom: 16 }}>
+                      🍽 {storeDetail.store.name}
+                    </div>
 
-                {/* 가게 사진 */}
-                {storeDetail.photos && storeDetail.photos.length > 0 && (
-                  <div style={{ marginBottom: 16 }}>
-                    {/* 대표 사진 */}
-                    {storeDetail.photos[0] && (
-                      <img
-                        src={storeDetail.photos[0].url}
-                        alt={`${storeDetail.store.name} 대표 사진`}
-                        style={{
-                          width: "100%",
-                          maxHeight: 250,
-                          objectFit: "cover",
-                          borderRadius: 12,
-                          marginBottom: 8,
-                        }}
-                      />
+                    {/* 평점 */}
+                    {storeDetail.insight?.rating !== null && storeDetail.insight?.rating !== undefined && (
+                      <div style={{ fontSize: 44, fontWeight: 800, color: "#28502E", marginBottom: 12 }}>
+                        ⭐ {storeDetail.insight.rating.toFixed(1)}
+                      </div>
                     )}
-                    {/* 리뷰 사진 */}
-                    {storeDetail.photos.length > 1 && (
-                      <div style={{ display: "flex", gap: 8 }}>
-                        {storeDetail.photos.slice(1, 3).map((photo, idx) => (
-                          <img
+
+                    {/* 평점신뢰도 */}
+                    {storeDetail.insight?.ratingTrustScore && (() => {
+                      const mappedLabel = RATING_TRUST_LABEL_MAPPING[storeDetail.insight.ratingTrustScore.label] || storeDetail.insight.ratingTrustScore.label;
+                      const { totalScore, breakdown } = storeDetail.insight.ratingTrustScore;
+                      
+                      return (
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E" }}>
+                            {storeDetail.insight.ratingTrustScore.emoji} {mappedLabel} ({totalScore}점)
+                          </div>
+                          <div style={{ fontSize: 13, color: "#8C7051", marginTop: 4 }}>
+                            표본 {breakdown.sampleSize}점 · 자연스러움 {breakdown.naturalness}점
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* 1km 순위 */}
+                    {storeDetail.insight?.comparedStores && (() => {
+                      const selfStore = storeDetail.insight.comparedStores.find(s => s.isSelf);
+                      if (!selfStore) return null;
+                      
+                      const rank = selfStore.rank;
+                      const total = storeDetail.insight.comparedStores.length;
+                      const percentile = Math.round((rank / total) * 100);
+                      
+                      return (
+                        <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E", marginBottom: 16 }}>
+                          📍 반경 1km 상위 {percentile}% ({rank}위 / {total}개)
+                        </div>
+                      );
+                    })()}
+
+                    {/* 부가 정보 한 줄 */}
+                    <div style={{ fontSize: 13, color: "#8C7051" }}>
+                      리뷰 {Math.max(storeDetail.insight?.reviewCount ?? 0, storeDetail.summary.reviewCount)}개 · 반경 1km 내 가게 비교 · {storeDetail.store.address ?? "주소 정보 없음"}
+                    </div>
+                  </div>
+
+                  {/* Right side: Photos (desktop only, below on mobile) */}
+                  {storeDetail.photos && storeDetail.photos.length > 0 && (
+                    <div
+                      style={{
+                        width: isMobile ? "100%" : "320px",
+                        flexShrink: 0,
+                        marginTop: isMobile ? 16 : 0,
+                      }}
+                    >
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8 }}>
+                        {storeDetail.photos.slice(0, 3).map((photoUrl, idx) => (
+                          <div
                             key={idx}
-                            src={photo.url}
-                            alt={`${storeDetail.store.name} 리뷰 사진 ${idx + 1}`}
                             style={{
-                              flex: 1,
-                              maxHeight: 150,
-                              objectFit: "cover",
+                              width: "100%",
+                              height: "100px",
                               borderRadius: 8,
+                              overflow: "hidden",
+                              background: failedPhotos.has(idx) ? "rgba(140, 112, 81, 0.2)" : "transparent",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
                             }}
-                          />
+                          >
+                            {failedPhotos.has(idx) ? (
+                              <span style={{ fontSize: 12, color: "#8C7051" }}>사진 로드 실패</span>
+                            ) : (
+                              <img
+                                src={photoUrl}
+                                alt={`${storeDetail.store.name} 사진 ${idx + 1}`}
+                                loading="lazy"
+                                onClick={() => handlePhotoClick(idx)}
+                                onError={() => {
+                                  setFailedPhotos(prev => new Set(prev).add(idx));
+                                }}
+                                style={{
+                                  width: "100%",
+                                  height: "100%",
+                                  objectFit: "cover",
+                                  cursor: "pointer",
+                                  transition: "transform 0.2s ease",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.transform = "scale(1.05)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.transform = "scale(1)";
+                                }}
+                              />
+                            )}
+                          </div>
                         ))}
                       </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 평점 */}
-                {storeDetail.insight?.rating !== null && storeDetail.insight?.rating !== undefined && (
-                  <div style={{ fontSize: 44, fontWeight: 800, color: "#28502E", marginBottom: 12 }}>
-                    ⭐ {storeDetail.insight.rating.toFixed(1)}
-                  </div>
-                )}
-
-                {/* 평점신뢰도 */}
-                {storeDetail.insight?.ratingTrustScore && (() => {
-                  const mappedLabel = RATING_TRUST_LABEL_MAPPING[storeDetail.insight.ratingTrustScore.label] || storeDetail.insight.ratingTrustScore.label;
-                  const { totalScore, breakdown } = storeDetail.insight.ratingTrustScore;
-                  
-                  return (
-                    <div style={{ marginBottom: 12 }}>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E" }}>
-                        {storeDetail.insight.ratingTrustScore.emoji} {mappedLabel} ({totalScore}점)
-                      </div>
-                      <div style={{ fontSize: 13, color: "#8C7051", marginTop: 4 }}>
-                        표본 {breakdown.sampleSize}점 · 자연스러움 {breakdown.naturalness}점
-                      </div>
                     </div>
-                  );
-                })()}
-
-                {/* 1km 순위 */}
-                {storeDetail.insight?.comparedStores && (() => {
-                  const selfStore = storeDetail.insight.comparedStores.find(s => s.isSelf);
-                  if (!selfStore) return null;
-                  
-                  const rank = selfStore.rank;
-                  const total = storeDetail.insight.comparedStores.length;
-                  const percentile = Math.round((rank / total) * 100);
-                  
-                  return (
-                    <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E", marginBottom: 16 }}>
-                      📍 반경 1km 상위 {percentile}% ({rank}위 / {total}개)
-                    </div>
-                  );
-                })()}
-
-                {/* 부가 정보 한 줄 */}
-                <div style={{ fontSize: 13, color: "#8C7051" }}>
-                  리뷰 {Math.max(storeDetail.insight?.reviewCount ?? 0, storeDetail.summary.reviewCount)}개 · 반경 1km 내 가게 비교 · {storeDetail.store.address ?? "주소 정보 없음"}
+                  )}
                 </div>
               </div>
+
+              {/* Photo Modal */}
+              {photoModalOpen && storeDetail.photosFull && storeDetail.photosFull.length > 0 && (
+                <div
+                  onClick={() => setPhotoModalOpen(false)}
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: "rgba(0, 0, 0, 0.9)",
+                    zIndex: 9999,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 20,
+                  }}
+                >
+                  {/* Close button */}
+                  <button
+                    onClick={() => setPhotoModalOpen(false)}
+                    style={{
+                      position: "absolute",
+                      top: 20,
+                      right: 20,
+                      background: "rgba(255, 255, 255, 0.2)",
+                      border: "none",
+                      color: "#ffffff",
+                      fontSize: 32,
+                      width: 48,
+                      height: 48,
+                      borderRadius: "50%",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "background 0.2s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "rgba(255, 255, 255, 0.3)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "rgba(255, 255, 255, 0.2)";
+                    }}
+                  >
+                    ×
+                  </button>
+
+                  {/* Previous button */}
+                  {storeDetail.photosFull.length > 1 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePrevPhoto();
+                      }}
+                      style={{
+                        position: "absolute",
+                        left: 20,
+                        background: "rgba(255, 255, 255, 0.2)",
+                        border: "none",
+                        color: "#ffffff",
+                        fontSize: 32,
+                        width: 48,
+                        height: 48,
+                        borderRadius: "50%",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "background 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "rgba(255, 255, 255, 0.3)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "rgba(255, 255, 255, 0.2)";
+                      }}
+                    >
+                      ‹
+                    </button>
+                  )}
+
+                  {/* Photo */}
+                  {failedPhotos.has(currentPhotoIndex) ? (
+                    <div
+                      style={{
+                        background: "rgba(140, 112, 81, 0.3)",
+                        padding: "40px 60px",
+                        borderRadius: 8,
+                        textAlign: "center",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ fontSize: 48, marginBottom: 16 }}>🖼️</div>
+                      <div style={{ fontSize: 16, color: "#ffffff" }}>사진을 불러올 수 없습니다</div>
+                    </div>
+                  ) : (
+                    <img
+                      src={storeDetail.photosFull[currentPhotoIndex]}
+                      alt={`${storeDetail.store.name} 사진`}
+                      onClick={(e) => e.stopPropagation()}
+                      onError={() => {
+                        setFailedPhotos(prev => new Set(prev).add(currentPhotoIndex));
+                      }}
+                      style={{
+                        maxWidth: "90%",
+                        maxHeight: "90%",
+                        objectFit: "contain",
+                        borderRadius: 8,
+                      }}
+                    />
+                  )}
+
+                  {/* Next button */}
+                  {storeDetail.photosFull.length > 1 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleNextPhoto();
+                      }}
+                      style={{
+                        position: "absolute",
+                        right: 20,
+                        background: "rgba(255, 255, 255, 0.2)",
+                        border: "none",
+                        color: "#ffffff",
+                        fontSize: 32,
+                        width: 48,
+                        height: 48,
+                        borderRadius: "50%",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "background 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "rgba(255, 255, 255, 0.3)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "rgba(255, 255, 255, 0.2)";
+                      }}
+                    >
+                      ›
+                    </button>
+                  )}
+
+                  {/* Photo counter */}
+                  {storeDetail.photosFull.length > 1 && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        bottom: 20,
+                        background: "rgba(0, 0, 0, 0.6)",
+                        color: "#ffffff",
+                        padding: "8px 16px",
+                        borderRadius: 20,
+                        fontSize: 14,
+                      }}
+                    >
+                      {currentPhotoIndex + 1} / {storeDetail.photosFull.length}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 애드센스 광고 플레이스홀더 (가게 상세 하단) */}
               <div
