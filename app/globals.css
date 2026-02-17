@@ -1,15 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #faf7f3;
-  --foreground: #4a3f35;
-  --card-bg: #ffffff;
-  --card-border: #d4c7ba;
-  --card-hover: #ede5d8;
-  --button-primary: #c4a882;
-  --button-hover: #d4b892;
-  --highlight-yellow: #fff3cd;
-  --text-muted: #7a6f65;
+  --background: #f5f2ed;
+  --foreground: #2d2d2d;
+  --card-bg: #faf8f5;
+  --card-border: #c9b99e;
+  --card-hover: #eee9e0;
+  --button-primary: #28502E;
+  --button-hover: #47682C;
+  --text-muted: #8C7051;
 }
 
 @theme inline {
@@ -32,7 +31,7 @@ body {
 
 .hover-card:hover {
   background: var(--card-hover);
-  box-shadow: 0 2px 8px rgba(74, 63, 53, 0.1);
+  box-shadow: 0 2px 8px rgba(140, 112, 81, 0.2);
 }
 
 .hover-button {
@@ -48,6 +47,6 @@ body {
 }
 
 .hover-list-item:hover {
-  background: #f5f0e8;
+  background: rgba(71, 104, 44, 0.1);
 }
 
