@@ -4,7 +4,6 @@ create table if not exists public.stores (
   address text,
   latitude numeric(10, 7),
   longitude numeric(10, 7),
-  kakao_place_id text,
   external_rating numeric(3, 2),
   external_review_count integer default 0,
   created_at timestamptz not null default now(),
@@ -68,16 +67,12 @@ create table if not exists public.naver_signal_cache (
 alter table public.stores add column if not exists updated_at timestamptz not null default now();
 alter table public.stores add column if not exists latitude numeric(10, 7);
 alter table public.stores add column if not exists longitude numeric(10, 7);
-alter table public.stores add column if not exists kakao_place_id text;
 alter table public.reviews add column if not exists updated_at timestamptz not null default now();
 alter table public.reviews add column if not exists is_disclosed_ad boolean not null default false;
 
 create index if not exists idx_reviews_store_id on public.reviews(store_id);
 create index if not exists idx_reviews_source on public.reviews(source);
 create index if not exists idx_reviews_created_at on public.reviews(created_at desc);
-create unique index if not exists idx_stores_kakao_place_id_unique
-  on public.stores(kakao_place_id)
-  where kakao_place_id is not null;
 create index if not exists idx_review_analyses_review_id_created_at on public.review_analyses(review_id, created_at desc);
 create index if not exists idx_review_analyses_store_id_created_at on public.review_analyses(store_id, created_at desc);
 create index if not exists idx_google_review_cache_updated_at on public.google_review_cache(updated_at desc);
