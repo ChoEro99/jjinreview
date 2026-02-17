@@ -46,7 +46,7 @@ function reliabilityBySnapshot(rating: number | null, reviewCount: number) {
 export default function HomeInteractive({ stores }: Props) {
   void stores;
   const MAX_SEARCH_RESULTS = 50;
-  const PAGE_SIZE = 5;
+  const PAGE_SIZE = 10;
   const palette = {
     bg: "#ede7d9",
     primary: "#a49694",
@@ -327,7 +327,14 @@ export default function HomeInteractive({ stores }: Props) {
               e.preventDefault();
               void runSearch(query);
             }}
-            style={{ width: "min(720px, 100%)", display: "flex", gap: 8, alignItems: "stretch" }}
+            style={{
+              width: "min(720px, 100%)",
+              display: "flex",
+              gap: 8,
+              alignItems: "stretch",
+              maxWidth: "100%",
+              boxSizing: "border-box",
+            }}
           >
             <input
               value={query}
@@ -343,6 +350,7 @@ export default function HomeInteractive({ stores }: Props) {
                 background: palette.bg,
                 color: palette.text,
                 minHeight: 48,
+                boxSizing: "border-box",
               }}
             />
             <button
@@ -360,6 +368,7 @@ export default function HomeInteractive({ stores }: Props) {
                 minHeight: 48,
                 minWidth: isMobile ? 68 : 76,
                 transition: "background 0.15s ease",
+                boxSizing: "border-box",
               }}
             >
               검색
@@ -416,6 +425,9 @@ export default function HomeInteractive({ stores }: Props) {
                           color: palette.text,
                           minHeight: 60,
                           transition: "background 0.15s ease, border-color 0.15s ease",
+                          boxSizing: "border-box",
+                          maxWidth: "100%",
+                          overflow: "hidden",
                         }}
                       >
                         <div
