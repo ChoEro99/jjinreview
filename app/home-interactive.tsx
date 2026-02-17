@@ -181,7 +181,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         }}
       >
         <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>찐리뷰</h1>
-        <p style={{ marginTop: 8, fontSize: 16, opacity: 0.9, color: "#8C7051" }}>
+        <p style={{ marginTop: 8, fontSize: 16, opacity: 1, color: "#e8dfc9" }}>
           AI가 분석하는 진짜 리뷰, 광고 의심 리뷰를 걸러내는 신뢰할 수 있는 리뷰 플랫폼
         </p>
       </header>
@@ -417,7 +417,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                             background: comparedStore.isSelf ? "rgba(40, 80, 46, 0.12)" : isHovered ? "rgba(71, 104, 44, 0.1)" : "#faf8f5",
                             cursor: comparedStore.isSelf ? "default" : "pointer",
                             transition: "all 0.2s ease",
-                            border: comparedStore.isSelf ? "2px solid #28502E" : "none",
+                            border: comparedStore.isSelf ? "2px solid #28502E" : "2px solid transparent",
                           }}
                         >
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
