@@ -400,10 +400,17 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                   marginBottom: 16,
                 }}
               >
-                {/* Main content: store info with photos below */}
-                <div>
+                {/* Main content: store info on left, photos on right (desktop) */}
+                <div style={{ 
+                  display: isMobile ? "block" : "flex", 
+                  gap: isMobile ? 0 : 24,
+                  alignItems: "flex-start"
+                }}>
                   {/* Store info */}
-                  <div style={{ minWidth: 0 }}>
+                  <div style={{ 
+                    minWidth: 0,
+                    flex: isMobile ? "none" : 1
+                  }}>
                     {/* 가게 이름 */}
                     <div style={{ fontSize: 28, fontWeight: 800, color: "#28502E", marginBottom: 16 }}>
                       🍽 {storeDetail.store.name}
@@ -455,21 +462,26 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                     </div>
                   </div>
 
-                  {/* Photos section below store info */}
+                  {/* Photos section on the right (desktop) or below (mobile) */}
                   {storeDetail.photos && storeDetail.photos.length > 0 && (
                     <div
                       style={{
-                        width: "100%",
-                        marginTop: 16,
+                        width: isMobile ? "100%" : "280px",
+                        marginTop: isMobile ? 16 : 0,
+                        flexShrink: 0,
                       }}
                     >
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+                      <div style={{ 
+                        display: "flex", 
+                        flexDirection: "column",
+                        gap: 8 
+                      }}>
                         {storeDetail.photos.slice(0, 3).map((photoUrl, idx) => (
                           <div
                             key={idx}
                             style={{
                               width: "100%",
-                              height: "160px",
+                              height: isMobile ? "160px" : "120px",
                               borderRadius: 8,
                               overflow: "hidden",
                               background: failedPhotos.has(idx) ? "rgba(140, 112, 81, 0.2)" : "transparent",
