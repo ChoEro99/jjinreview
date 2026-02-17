@@ -1,24 +1,3302 @@
-// Original Content Above This Line
+import { analyzeReviewWithProvider } from "@/src/lib/ai-provider";
+import {
+  adAnyProbabilityFromAnalysis,
+  heuristicAnalyzeReview,
+  type ReviewSource,
+} from "@/src/lib/review-engine";
+import { supabaseServer } from "@/src/lib/supabaseServer";
 
-// Helper function to build fuzzy pattern
-function buildFuzzyLikePattern(keyword: string) {
-    const normalized = normalizeQueryText(keyword);
-    if (normalized.length < 3) return null;
-    return `%${normalized.split("").join("%")}%`;
+export type StoreBase = {
+  id: number;
+  name: string;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  kakaoPlaceId: string | null;
+  externalRating: number | null;
+  externalReviewCount: number | null;
+};
+
+export type ReviewAnalysisRecord = {
+  id: number;
+  reviewId: number;
+  storeId: number;
+  provider: string;
+  model: string;
+  version: string;
+  adRisk: number;
+  undisclosedAdRisk: number;
+  lowQualityRisk: number;
+  trustScore: number;
+  confidence: number;
+  signals: string[];
+  reasonSummary: string;
+  createdAt: string;
+};
+
+export type ReviewRecord = {
+  id: number;
+  storeId: number;
+  source: ReviewSource;
+  rating: number;
+  content: string;
+  authorName: string | null;
+  isDisclosedAd: boolean;
+  createdAt: string;
+  latestAnalysis: ReviewAnalysisRecord | null;
+};
+
+export type StoreSummary = {
+  weightedRating: number | null;
+  adSuspectRatio: number;
+  trustScore: number;
+  positiveRatio: number;
+  reviewCount: number;
+  inappReviewCount: number;
+  externalReviewCount: number;
+  lastAnalyzedAt: string | null;
+};
+
+export type StoreWithSummary = StoreBase & {
+  summary: StoreSummary;
+};
+
+function normalizeNameKey(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[()\-_/.,]/g, "");
 }
 
-// Updated findRegisteredStoresByKeyword
-const like = `%${keyword}%`;
-const fuzzyLike = buildFuzzyLikePattern(keyword);
-const patterns = fuzzyLike ? [like, fuzzyLike] : [like];
-
-// Iterate over patterns and run the query
-const rows = [];
-for (const pattern of patterns) {
-    // your logic to run full/noKakao/minimal ilike query
-    // collect rows into array
+function normalizeAddressKey(address: string | null | undefined) {
+  return (address ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[()\-_/.,]/g, "");
 }
 
-return rows; // Ensure dedup/filtering logic remains unchanged
+function normalizeQueryText(input: string) {
+  return input.toLowerCase().replace(/\s+/g, "").replace(/[()\-_/.,]/g, "");
+}
 
-// Original Content Below This Line
+function queryTokens(input: string) {
+  return input
+    .trim()
+    .split(/\s+/)
+    .map((v) => v.trim())
+    .filter((v) => v.length >= 2);
+}
+
+function queryRelevanceScore(query: string, name: string | null, address: string | null) {
+  const q = normalizeQueryText(query);
+  const n = normalizeQueryText(name ?? "");
+  const a = normalizeQueryText(address ?? "");
+  if (!q) return 0;
+
+  let score = 0;
+  if (n === q) score += 100;
+  else if (n.startsWith(q)) score += 80;
+  else if (n.includes(q)) score += 60;
+  else if (a.includes(q)) score += 35;
+
+  const tokens = queryTokens(query);
+  if (tokens.length) {
+    let nameHit = 0;
+    let addrHit = 0;
+    for (const token of tokens) {
+      const t = normalizeQueryText(token);
+      if (n.includes(t)) nameHit += 1;
+      else if (a.includes(t)) addrHit += 1;
+    }
+    score += nameHit * 20 + addrHit * 8;
+  }
+
+  return score;
+}
+
+function isRestaurantLikeName(name: string) {
+  const text = name.toLowerCase();
+  const excluded = [
+    "카페",
+    "coffee",
+    "스타벅스",
+    "투썸",
+    "메가커피",
+    "빽다방",
+    "편의점",
+    "마트",
+    "약국",
+    "병원",
+    "의원",
+    "학원",
+    "미용실",
+    "주유소",
+    "호텔",
+    "모텔",
+    "펜션",
+    "세탁",
+    "은행",
+  ];
+  return !excluded.some((word) => text.includes(word));
+}
+
+async function findNormalizedDuplicateStore(input: {
+  name: string;
+  address: string | null;
+}) {
+  const sb = supabaseServer();
+  const nameKey = normalizeNameKey(input.name);
+  const addressKey = normalizeAddressKey(input.address);
+  if (!nameKey || !addressKey) return null;
+
+  const full = await sb
+    .from("stores")
+    .select("id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count")
+    .ilike("name", `%${input.name}%`)
+    .limit(30);
+  let rowsRaw: Record<string, unknown>[] = [];
+  if (!full.error) {
+    rowsRaw = (full.data ?? []) as Record<string, unknown>[];
+  } else if (isMissingColumnError(full.error)) {
+    const minimal = await sb
+      .from("stores")
+      .select("id, name, address, latitude, longitude, external_rating, external_review_count")
+      .ilike("name", `%${input.name}%`)
+      .limit(30);
+    if (minimal.error) return null;
+    rowsRaw = (minimal.data ?? []) as Record<string, unknown>[];
+  } else {
+    return null;
+  }
+
+  const rows = rowsRaw.map((row) => normalizeStoreRow(row));
+  const found = rows.find(
+    (row) =>
+      normalizeNameKey(row.name) === nameKey &&
+      normalizeAddressKey(row.address) === addressKey
+  );
+  return found ?? null;
+}
+
+export type CreateStoreInput = {
+  name: string;
+  address?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  kakaoPlaceId?: string | null;
+  externalRating?: number | null;
+  externalReviewCount?: number | null;
+};
+
+type StoreMetricRow = {
+  store_id: number;
+  weighted_rating: number | null;
+  ad_suspect_ratio: number;
+  trust_score: number;
+  positive_ratio: number;
+  review_count: number;
+  inapp_review_count: number;
+  external_review_count: number;
+  last_analyzed_at: string | null;
+};
+
+const REVIEW_TABLE_CANDIDATES = ["reviews", "store_reviews"];
+
+function isMissingColumnError(error: { code?: string } | null | undefined) {
+  return error?.code === "42703" || error?.code === "PGRST204";
+}
+
+function isMissingTableError(error: { code?: string; message?: string } | null | undefined) {
+  return (
+    error?.code === "42P01" ||
+    error?.code === "PGRST205" ||
+    /schema cache/i.test(error?.message ?? "")
+  );
+}
+
+function toNumber(value: unknown, fallback: number | null = null) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function toBoolean(value: unknown, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.toLowerCase();
+    if (normalized === "true" || normalized === "1") return true;
+    if (normalized === "false" || normalized === "0") return false;
+  }
+  return fallback;
+}
+
+function round2(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function round4(value: number) {
+  return Math.round(value * 10000) / 10000;
+}
+
+function normalizeReviewRow(row: Record<string, unknown>): Omit<ReviewRecord, "latestAnalysis"> {
+  return {
+    id: toNumber(row.id, 0) ?? 0,
+    storeId: toNumber(row.store_id, 0) ?? 0,
+    source: row.source === "external" ? "external" : "inapp",
+    rating: Math.max(1, Math.min(5, toNumber(row.rating, 3) ?? 3)),
+    content: typeof row.content === "string" ? row.content : "",
+    authorName:
+      typeof row.author_name === "string"
+        ? row.author_name
+        : typeof row.user_name === "string"
+          ? row.user_name
+          : null,
+    isDisclosedAd: toBoolean(row.is_disclosed_ad ?? row.is_disclosed_marketing, false),
+    createdAt:
+      typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
+  };
+}
+
+function normalizeStoreRow(row: Record<string, unknown>): StoreBase {
+  return {
+    id: toNumber(row.id, 0) ?? 0,
+    name: typeof row.name === "string" ? row.name : "이름없음",
+    address: typeof row.address === "string" ? row.address : null,
+    latitude: toNumber(row.latitude),
+    longitude: toNumber(row.longitude),
+    kakaoPlaceId: typeof row.kakao_place_id === "string" ? row.kakao_place_id : null,
+    externalRating: toNumber(row.external_rating),
+    externalReviewCount: toNumber(row.external_review_count),
+  };
+}
+
+function normalizeAnalysisRow(row: Record<string, unknown>): ReviewAnalysisRecord {
+  return {
+    id: toNumber(row.id, 0) ?? 0,
+    reviewId: toNumber(row.review_id, 0) ?? 0,
+    storeId: toNumber(row.store_id, 0) ?? 0,
+    provider: typeof row.model_provider === "string" ? row.model_provider : "heuristic",
+    model: typeof row.model_name === "string" ? row.model_name : "rule-based-v1",
+    version: typeof row.analysis_version === "string" ? row.analysis_version : "v1",
+    adRisk: toNumber(row.ad_risk, 0) ?? 0,
+    undisclosedAdRisk: toNumber(row.undisclosed_ad_risk, 0) ?? 0,
+    lowQualityRisk: toNumber(row.low_quality_risk, 0) ?? 0,
+    trustScore: toNumber(row.trust_score, 0.5) ?? 0.5,
+    confidence: toNumber(row.confidence, 0.5) ?? 0.5,
+    signals: Array.isArray(row.signals)
+      ? row.signals.filter((v): v is string => typeof v === "string")
+      : [],
+    reasonSummary:
+      typeof row.reason_summary === "string"
+        ? row.reason_summary
+        : "AI 분석 결과 요약이 없습니다.",
+    createdAt:
+      typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
+  };
+}
+
+function metricRowToSummary(metric: StoreMetricRow): StoreSummary {
+  return {
+    weightedRating: metric.weighted_rating,
+    adSuspectRatio: metric.ad_suspect_ratio,
+    trustScore: metric.trust_score,
+    positiveRatio: metric.positive_ratio,
+    reviewCount: metric.review_count,
+    inappReviewCount: metric.inapp_review_count,
+    externalReviewCount: metric.external_review_count,
+    lastAnalyzedAt: metric.last_analyzed_at,
+  };
+}
+
+function summarizeReviews(reviews: ReviewRecord[], fallbackExternalRating: number | null): StoreSummary {
+  const inappReviewCount = reviews.filter((review) => review.source === "inapp").length;
+  const externalReviewCount = reviews.filter((review) => review.source === "external").length;
+
+  let ratingWeightSum = 0;
+  let weightedRatingSum = 0;
+  let adAnySum = 0;
+  let trustSum = 0;
+  let positiveWeightSum = 0;
+  let reviewCount = 0;
+  let lastAnalyzedAt: string | null = null;
+
+  for (const review of reviews) {
+    const analysis =
+      review.latestAnalysis ??
+      ({
+        ...heuristicAnalyzeReview({
+          rating: review.rating,
+          content: review.content,
+          isDisclosedAd: review.isDisclosedAd,
+        }),
+        createdAt: null,
+      } as const);
+
+    const adAny = adAnyProbabilityFromAnalysis({
+      adRisk: analysis.adRisk,
+      undisclosedAdRisk: analysis.undisclosedAdRisk,
+    });
+
+    const trust = analysis.trustScore;
+    const ratingWeight = Math.max(0.1, trust * (1 - adAny * 0.8));
+
+    weightedRatingSum += review.rating * ratingWeight;
+    ratingWeightSum += ratingWeight;
+    adAnySum += adAny;
+    trustSum += trust;
+    reviewCount += 1;
+
+    if (review.rating >= 4) {
+      positiveWeightSum += ratingWeight;
+    }
+
+    if (review.latestAnalysis?.createdAt) {
+      if (!lastAnalyzedAt || review.latestAnalysis.createdAt > lastAnalyzedAt) {
+        lastAnalyzedAt = review.latestAnalysis.createdAt;
+      }
+    }
+  }
+
+  let weightedRating = ratingWeightSum > 0 ? round2(weightedRatingSum / ratingWeightSum) : null;
+
+  if (weightedRating === null && fallbackExternalRating !== null) {
+    weightedRating = round2(fallbackExternalRating);
+  }
+
+  const adSuspectRatio = reviewCount > 0 ? round4(adAnySum / reviewCount) : 0;
+  const trustScore = reviewCount > 0 ? round4(trustSum / reviewCount) : 0.5;
+  const positiveRatio = ratingWeightSum > 0 ? round4(positiveWeightSum / ratingWeightSum) : 0;
+
+  return {
+    weightedRating,
+    adSuspectRatio,
+    trustScore,
+    positiveRatio,
+    reviewCount,
+    inappReviewCount,
+    externalReviewCount,
+    lastAnalyzedAt,
+  };
+}
+
+async function loadReviewsByStoreIds(storeIds: number[]) {
+  if (!storeIds.length) return [] as Omit<ReviewRecord, "latestAnalysis">[];
+
+  const sb = supabaseServer();
+  let tableMissingCount = 0;
+  let lastError: Error | null = null;
+
+  for (const tableName of REVIEW_TABLE_CANDIDATES) {
+    const full = await sb
+      .from(tableName)
+      .select("id, store_id, source, rating, content, author_name, is_disclosed_ad, created_at")
+      .in("store_id", storeIds)
+      .order("created_at", { ascending: false });
+
+    if (!full.error) {
+      return (full.data ?? []).map((row) =>
+        normalizeReviewRow(row as Record<string, unknown>)
+      );
+    }
+
+    // Some legacy schemas miss source/author/is_disclosed_ad columns.
+    if (isMissingColumnError(full.error)) {
+      const minimal = await sb
+        .from(tableName)
+        .select("id, store_id, rating, content, created_at")
+        .in("store_id", storeIds)
+        .order("created_at", { ascending: false });
+
+      if (!minimal.error) {
+        return (minimal.data ?? []).map((row) =>
+          normalizeReviewRow(row as Record<string, unknown>)
+        );
+      }
+
+      if (isMissingTableError(minimal.error)) {
+        tableMissingCount += 1;
+        continue;
+      }
+
+      lastError = new Error(minimal.error.message);
+      break;
+    }
+
+    if (isMissingTableError(full.error)) {
+      tableMissingCount += 1;
+      continue;
+    }
+
+    lastError = new Error(full.error.message);
+    break;
+  }
+
+  if (tableMissingCount === REVIEW_TABLE_CANDIDATES.length) return [];
+  if (lastError) throw lastError;
+  return [];
+}
+
+async function loadLatestAnalysesByReviewIds(reviewIds: number[]) {
+  if (!reviewIds.length) return new Map<number, ReviewAnalysisRecord>();
+
+  const sb = supabaseServer();
+  const { data, error } = await sb
+    .from("review_analyses")
+    .select("id, review_id, store_id, model_provider, model_name, analysis_version, ad_risk, undisclosed_ad_risk, low_quality_risk, trust_score, confidence, signals, reason_summary, created_at")
+    .in("review_id", reviewIds)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    // Table can be missing before schema migration.
+    if (isMissingTableError(error)) return new Map<number, ReviewAnalysisRecord>();
+    throw new Error(error.message);
+  }
+
+  const map = new Map<number, ReviewAnalysisRecord>();
+  for (const row of data ?? []) {
+    const normalized = normalizeAnalysisRow(row as Record<string, unknown>);
+    if (!map.has(normalized.reviewId)) {
+      map.set(normalized.reviewId, normalized);
+    }
+  }
+
+  return map;
+}
+
+async function loadStoreMetricMap(storeIds: number[]) {
+  if (!storeIds.length) return new Map<number, StoreMetricRow>();
+
+  const sb = supabaseServer();
+  const { data, error } = await sb
+    .from("store_metrics")
+    .select("store_id, weighted_rating, ad_suspect_ratio, trust_score, positive_ratio, review_count, inapp_review_count, external_review_count, last_analyzed_at")
+    .in("store_id", storeIds);
+
+  if (error) {
+    // Table can be missing in early setup; caller has fallback.
+    return new Map<number, StoreMetricRow>();
+  }
+
+  return new Map(
+    (data ?? []).map((row) => [
+      toNumber((row as { store_id: unknown }).store_id, 0) ?? 0,
+      {
+        store_id: toNumber((row as { store_id: unknown }).store_id, 0) ?? 0,
+        weighted_rating: toNumber((row as { weighted_rating: unknown }).weighted_rating),
+        ad_suspect_ratio:
+          toNumber((row as { ad_suspect_ratio: unknown }).ad_suspect_ratio, 0) ?? 0,
+        trust_score: toNumber((row as { trust_score: unknown }).trust_score, 0.5) ?? 0.5,
+        positive_ratio: toNumber((row as { positive_ratio: unknown }).positive_ratio, 0) ?? 0,
+        review_count: toNumber((row as { review_count: unknown }).review_count, 0) ?? 0,
+        inapp_review_count:
+          toNumber((row as { inapp_review_count: unknown }).inapp_review_count, 0) ?? 0,
+        external_review_count:
+          toNumber((row as { external_review_count: unknown }).external_review_count, 0) ?? 0,
+        last_analyzed_at:
+          typeof (row as { last_analyzed_at: unknown }).last_analyzed_at === "string"
+            ? ((row as { last_analyzed_at: string }).last_analyzed_at as string)
+            : null,
+      },
+    ])
+  );
+}
+
+async function enrichReviews(baseReviews: Omit<ReviewRecord, "latestAnalysis">[]) {
+  const analysisMap = await loadLatestAnalysesByReviewIds(baseReviews.map((review) => review.id));
+  return baseReviews.map((review) => ({
+    ...review,
+    latestAnalysis: analysisMap.get(review.id) ?? null,
+  }));
+}
+
+async function loadRecentReviewsForBatch(limit: number) {
+  const sb = supabaseServer();
+  let tableMissingCount = 0;
+  let lastError: Error | null = null;
+
+  for (const tableName of REVIEW_TABLE_CANDIDATES) {
+    const full = await sb
+      .from(tableName)
+      .select("id, store_id, source, rating, content, author_name, is_disclosed_ad, created_at")
+      .order("id", { ascending: false })
+      .limit(limit);
+
+    if (!full.error) {
+      return (full.data ?? []).map((row) =>
+        normalizeReviewRow(row as Record<string, unknown>)
+      );
+    }
+
+    if (isMissingColumnError(full.error)) {
+      const minimal = await sb
+        .from(tableName)
+        .select("id, store_id, rating, content, created_at")
+        .order("id", { ascending: false })
+        .limit(limit);
+
+      if (!minimal.error) {
+        return (minimal.data ?? []).map((row) =>
+          normalizeReviewRow(row as Record<string, unknown>)
+        );
+      }
+
+      if (isMissingTableError(minimal.error)) {
+        tableMissingCount += 1;
+        continue;
+      }
+
+      lastError = new Error(minimal.error.message);
+      break;
+    }
+
+    if (isMissingTableError(full.error)) {
+      tableMissingCount += 1;
+      continue;
+    }
+
+    lastError = new Error(full.error.message);
+    break;
+  }
+
+  if (tableMissingCount === REVIEW_TABLE_CANDIDATES.length) return [];
+  if (lastError) throw lastError;
+  return [];
+}
+
+async function persistAnalysisForReview(review: Omit<ReviewRecord, "latestAnalysis">) {
+  const sb = supabaseServer();
+  const result = await analyzeReviewWithProvider({
+    rating: review.rating,
+    content: review.content,
+    isDisclosedAd: review.isDisclosedAd,
+  });
+
+  const payload = {
+    review_id: review.id,
+    store_id: review.storeId,
+    model_provider: result.meta.provider,
+    model_name: result.meta.model,
+    analysis_version: result.meta.version,
+    ad_risk: result.analysis.adRisk,
+    undisclosed_ad_risk: result.analysis.undisclosedAdRisk,
+    low_quality_risk: result.analysis.lowQualityRisk,
+    trust_score: result.analysis.trustScore,
+    confidence: result.analysis.confidence,
+    signals: result.analysis.signals,
+    reason_summary: result.analysis.reasonSummary,
+    created_at: new Date().toISOString(),
+  };
+
+  const { error } = await sb.from("review_analyses").insert(payload);
+  if (error) throw new Error(error.message);
+}
+
+async function upsertStoreMetric(storeId: number, summary: StoreSummary) {
+  const sb = supabaseServer();
+  const payload = {
+    store_id: storeId,
+    weighted_rating: summary.weightedRating,
+    ad_suspect_ratio: summary.adSuspectRatio,
+    trust_score: summary.trustScore,
+    positive_ratio: summary.positiveRatio,
+    review_count: summary.reviewCount,
+    inapp_review_count: summary.inappReviewCount,
+    external_review_count: summary.externalReviewCount,
+    last_analyzed_at: summary.lastAnalyzedAt,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = await sb.from("store_metrics").upsert(payload, { onConflict: "store_id" });
+  if (error) {
+    if (isMissingTableError(error)) return;
+    throw new Error(error.message);
+  }
+}
+
+export async function recomputeStoreMetrics(storeId: number) {
+  const sb = supabaseServer();
+  const { data: store, error: storeError } = await sb
+    .from("stores")
+    .select("id, external_rating")
+    .eq("id", storeId)
+    .single();
+
+  if (storeError) throw new Error(storeError.message);
+
+  const baseReviews = await loadReviewsByStoreIds([storeId]);
+  const reviews = await enrichReviews(baseReviews);
+
+  const summary = summarizeReviews(
+    reviews,
+    toNumber((store as { external_rating: unknown }).external_rating)
+  );
+
+  await upsertStoreMetric(storeId, summary);
+  return summary;
+}
+
+export async function getStoresWithSummary() {
+  const sb = supabaseServer();
+  const full = await sb
+    .from("stores")
+    .select("id, name, address, latitude, longitude, external_rating, external_review_count")
+    .order("id", { ascending: false })
+    .limit(100);
+
+  let storesData: Record<string, unknown>[] | null = (full.data ?? null) as
+    | Record<string, unknown>[]
+    | null;
+
+  if (full.error) {
+    if (!isMissingColumnError(full.error)) throw new Error(full.error.message);
+
+    const minimal = await sb
+      .from("stores")
+      .select("id, name, address, external_rating, external_review_count")
+      .order("id", { ascending: false })
+      .limit(100);
+
+    if (minimal.error) throw new Error(minimal.error.message);
+    storesData = (minimal.data ?? null) as Record<string, unknown>[] | null;
+  }
+
+  const normalizedStores: StoreBase[] = (storesData ?? []).map((store) =>
+    normalizeStoreRow(store)
+  );
+
+  const metricMap = await loadStoreMetricMap(normalizedStores.map((store) => store.id));
+
+  const missingStoreIds = normalizedStores
+    .filter((store) => !metricMap.has(store.id))
+    .map((store) => store.id);
+
+  let computedSummaryMap = new Map<number, StoreSummary>();
+
+  if (missingStoreIds.length) {
+    const baseReviews = await loadReviewsByStoreIds(missingStoreIds);
+    const reviews = await enrichReviews(baseReviews);
+    const grouped = new Map<number, ReviewRecord[]>();
+
+    for (const review of reviews) {
+      const bucket = grouped.get(review.storeId);
+      if (bucket) bucket.push(review);
+      else grouped.set(review.storeId, [review]);
+    }
+
+    computedSummaryMap = new Map(
+      missingStoreIds.map((storeId) => {
+        const store = normalizedStores.find((row) => row.id === storeId);
+        const summary = summarizeReviews(grouped.get(storeId) ?? [], store?.externalRating ?? null);
+        return [storeId, summary] as const;
+      })
+    );
+  }
+
+  return normalizedStores.map((store) => {
+    const metric = metricMap.get(store.id);
+    const summary = metric
+      ? metricRowToSummary(metric)
+      : computedSummaryMap.get(store.id) ??
+        summarizeReviews([], store.externalRating);
+
+    return {
+      ...store,
+      summary,
+    };
+  }) satisfies StoreWithSummary[];
+}
+
+async function enrichStoresWithSummary(stores: StoreBase[]) {
+  if (!stores.length) return [] as StoreWithSummary[];
+
+  const metricMap = await loadStoreMetricMap(stores.map((store) => store.id));
+  const missingStoreIds = stores
+    .filter((store) => !metricMap.has(store.id))
+    .map((store) => store.id);
+
+  let computedSummaryMap = new Map<number, StoreSummary>();
+  if (missingStoreIds.length) {
+    const baseReviews = await loadReviewsByStoreIds(missingStoreIds);
+    const reviews = await enrichReviews(baseReviews);
+    const grouped = new Map<number, ReviewRecord[]>();
+    for (const review of reviews) {
+      const bucket = grouped.get(review.storeId);
+      if (bucket) bucket.push(review);
+      else grouped.set(review.storeId, [review]);
+    }
+
+    computedSummaryMap = new Map(
+      missingStoreIds.map((storeId) => {
+        const store = stores.find((row) => row.id === storeId);
+        const summary = summarizeReviews(grouped.get(storeId) ?? [], store?.externalRating ?? null);
+        return [storeId, summary] as const;
+      })
+    );
+  }
+
+  return stores.map((store) => ({
+    ...store,
+    summary:
+      metricMap.get(store.id)
+        ? metricRowToSummary(metricMap.get(store.id) as StoreMetricRow)
+        : computedSummaryMap.get(store.id) ?? summarizeReviews([], store.externalRating),
+  })) satisfies StoreWithSummary[];
+}
+
+async function findRegisteredStoresByKeyword(keyword: string, limit = 20) {
+  const sb = supabaseServer();
+  const like = `%${keyword}%`;
+  const selectedFull =
+    "id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count";
+  const selectedNoKakao =
+    "id, name, address, latitude, longitude, external_rating, external_review_count";
+  const selectedMinimal = "id, name, address, external_rating, external_review_count";
+
+  async function queryBy(field: "name" | "address") {
+    const full = await sb.from("stores").select(selectedFull).ilike(field, like).limit(limit);
+    if (!full.error) return (full.data ?? []) as Record<string, unknown>[];
+    if (!isMissingColumnError(full.error)) throw new Error(full.error.message);
+
+    const noKakao = await sb
+      .from("stores")
+      .select(selectedNoKakao)
+      .ilike(field, like)
+      .limit(limit);
+    if (!noKakao.error) return (noKakao.data ?? []) as Record<string, unknown>[];
+    if (!isMissingColumnError(noKakao.error)) throw new Error(noKakao.error.message);
+
+    const minimal = await sb.from("stores").select(selectedMinimal).ilike(field, like).limit(limit);
+    if (!minimal.error) return (minimal.data ?? []) as Record<string, unknown>[];
+    throw new Error(minimal.error.message);
+  }
+
+  const byName = await queryBy("name");
+  const byAddress = await queryBy("address");
+
+  const rows = [
+    ...byName,
+    ...byAddress,
+  ];
+  const dedup = new Map<number, StoreBase>();
+  for (const row of rows) {
+    const normalized = normalizeStoreRow(row);
+    dedup.set(normalized.id, normalized);
+  }
+
+  return Array.from(dedup.values())
+    .filter((row) => isRestaurantLikeName(row.name))
+    .slice(0, limit);
+}
+
+function distanceKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+) {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return 6371 * c;
+}
+
+function sortByNearest(
+  stores: StoreWithSummary[],
+  userLocation?: { latitude: number; longitude: number } | null
+) {
+  if (!userLocation) return stores;
+  const { latitude, longitude } = userLocation;
+  return [...stores].sort((a, b) => {
+    const aHas = typeof a.latitude === "number" && typeof a.longitude === "number";
+    const bHas = typeof b.latitude === "number" && typeof b.longitude === "number";
+    if (aHas && bHas) {
+      const ad = distanceKm(latitude, longitude, a.latitude as number, a.longitude as number);
+      const bd = distanceKm(latitude, longitude, b.latitude as number, b.longitude as number);
+      return ad - bd;
+    }
+    if (aHas) return -1;
+    if (bHas) return 1;
+    return 0;
+  });
+}
+
+export async function getStoreDetail(id: number) {
+  const sb = supabaseServer();
+  const full = await sb
+    .from("stores")
+    .select("id, name, address, latitude, longitude, external_rating, external_review_count")
+    .eq("id", id)
+    .single();
+
+  let storeData: Record<string, unknown> | null = (full.data ?? null) as
+    | Record<string, unknown>
+    | null;
+
+  if (full.error) {
+    if (!isMissingColumnError(full.error)) throw new Error(full.error.message);
+
+    const minimal = await sb
+      .from("stores")
+      .select("id, name, address, external_rating, external_review_count")
+      .eq("id", id)
+      .single();
+
+    if (minimal.error) throw new Error(minimal.error.message);
+    storeData = (minimal.data ?? null) as Record<string, unknown> | null;
+  }
+
+  if (!storeData) throw new Error("store not found");
+  const normalizedStoreRaw = await refreshStoreExternalSnapshotIfStale(id);
+  const normalizedStore = await ensureStoreGeo(normalizedStoreRaw);
+  await importNearbyRestaurantsForStore(normalizedStore).catch(() => null);
+
+  const baseReviews = await loadReviewsByStoreIds([id]);
+  const reviews = await enrichReviews(baseReviews);
+  reviews.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+
+  const summary = summarizeReviews(reviews, normalizedStore.externalRating);
+  const rankInsight = await computeTopRankWithin1KmBySameLabel(normalizedStore);
+  const reliabilityLabel = reliabilityLabelBySnapshot(
+    normalizedStore.externalRating,
+    normalizedStore.externalReviewCount ?? 0
+  );
+
+  return {
+    store: normalizedStore,
+    reviews,
+    summary,
+    insight: {
+      reliabilityLabel,
+      topPercent1km: rankInsight?.topPercent ?? null,
+      rankWithin1km: rankInsight?.rank ?? null,
+      rankTotalWithin1km: rankInsight?.total ?? null,
+      comparedStores: rankInsight?.comparedStores ?? [],
+      reviewCount: normalizedStore.externalReviewCount ?? 0,
+      rating: normalizedStore.externalRating,
+      radiusKm: 1,
+    },
+  };
+}
+
+export async function createStore(input: CreateStoreInput) {
+  const sb = supabaseServer();
+
+  const name = input.name.trim();
+  const address = input.address?.trim() || null;
+  const latitude =
+    typeof input.latitude === "number" && Number.isFinite(input.latitude)
+      ? input.latitude
+      : null;
+  const longitude =
+    typeof input.longitude === "number" && Number.isFinite(input.longitude)
+      ? input.longitude
+      : null;
+
+  const kakaoPlaceId = input.kakaoPlaceId?.trim() || null;
+
+  if (!name) {
+    throw new Error("가게 이름은 필수입니다.");
+  }
+
+  if (kakaoPlaceId) {
+    const byKakaoId = await sb
+      .from("stores")
+      .select("id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count")
+      .eq("kakao_place_id", kakaoPlaceId)
+      .limit(1);
+
+    if (!byKakaoId.error && byKakaoId.data?.[0]) {
+      const existing = normalizeStoreRow(byKakaoId.data[0] as Record<string, unknown>);
+      if ((existing.latitude === null || existing.longitude === null) && latitude !== null && longitude !== null) {
+        const updateGeo = await sb
+          .from("stores")
+          .update({ latitude, longitude, updated_at: new Date().toISOString() })
+          .eq("id", existing.id)
+          .select("id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count")
+          .single();
+        if (!updateGeo.error) {
+          return {
+            store: normalizeStoreRow(updateGeo.data as Record<string, unknown>),
+            created: false,
+          };
+        }
+      }
+      return {
+        store: existing,
+        created: false,
+      };
+    }
+  }
+
+  if (address) {
+    const duplicateFull = await sb
+      .from("stores")
+      .select("id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count")
+      .eq("name", name)
+      .eq("address", address)
+      .limit(1);
+    let duplicateRow: Record<string, unknown> | null = null;
+    if (!duplicateFull.error && duplicateFull.data?.[0]) {
+      duplicateRow = duplicateFull.data[0] as Record<string, unknown>;
+    } else if (isMissingColumnError(duplicateFull.error)) {
+      const duplicateMinimal = await sb
+        .from("stores")
+        .select("id, name, address, latitude, longitude, external_rating, external_review_count")
+        .eq("name", name)
+        .eq("address", address)
+        .limit(1);
+      if (!duplicateMinimal.error && duplicateMinimal.data?.[0]) {
+        duplicateRow = duplicateMinimal.data[0] as Record<string, unknown>;
+      }
+    } else if (duplicateFull.error) {
+      throw new Error(duplicateFull.error.message);
+    }
+
+    if (duplicateRow) {
+      const existing = normalizeStoreRow(duplicateRow);
+      if ((existing.latitude === null || existing.longitude === null) && latitude !== null && longitude !== null) {
+        const updateGeo = await sb
+          .from("stores")
+          .update({
+            latitude,
+            longitude,
+            ...(kakaoPlaceId ? { kakao_place_id: kakaoPlaceId } : {}),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existing.id)
+          .select("id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count")
+          .single();
+        if (!updateGeo.error) {
+          return {
+            store: normalizeStoreRow(updateGeo.data as Record<string, unknown>),
+            created: false,
+          };
+        }
+      }
+      return {
+        store: existing,
+        created: false,
+      };
+    }
+  }
+
+  const normalizedDuplicate = await findNormalizedDuplicateStore({ name, address });
+  if (normalizedDuplicate) {
+    if (
+      (normalizedDuplicate.latitude === null || normalizedDuplicate.longitude === null) &&
+      latitude !== null &&
+      longitude !== null
+    ) {
+      const updateGeo = await sb
+        .from("stores")
+        .update({
+          latitude,
+          longitude,
+          ...(kakaoPlaceId ? { kakao_place_id: kakaoPlaceId } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", normalizedDuplicate.id)
+        .select("id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count")
+        .single();
+      if (!updateGeo.error) {
+        return {
+          store: normalizeStoreRow(updateGeo.data as Record<string, unknown>),
+          created: false,
+        };
+      }
+    }
+    return {
+      store: normalizedDuplicate,
+      created: false,
+    };
+  }
+
+  const fullPayload = {
+    name,
+    address,
+    latitude,
+    longitude,
+    kakao_place_id: kakaoPlaceId,
+    external_rating:
+      typeof input.externalRating === "number" && Number.isFinite(input.externalRating)
+        ? input.externalRating
+        : null,
+    external_review_count:
+      typeof input.externalReviewCount === "number" &&
+      Number.isFinite(input.externalReviewCount)
+        ? Math.max(0, Math.round(input.externalReviewCount))
+        : 0,
+  };
+
+  const fullInsert = await sb
+    .from("stores")
+    .insert(fullPayload)
+    .select("id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count")
+    .single();
+
+  if (!fullInsert.error) {
+    return {
+      store: normalizeStoreRow(fullInsert.data as Record<string, unknown>),
+      created: true,
+    };
+  }
+
+  // Legacy fallback when latitude/longitude columns are not migrated yet.
+  if (isMissingColumnError(fullInsert.error)) {
+    const minimalInsert = await sb
+      .from("stores")
+      .insert({
+        name,
+        address,
+        external_rating: fullPayload.external_rating,
+        external_review_count: fullPayload.external_review_count,
+      })
+      .select("id, name, address, external_rating, external_review_count")
+      .single();
+
+    if (minimalInsert.error) throw new Error(minimalInsert.error.message);
+    return {
+      store: normalizeStoreRow(minimalInsert.data as Record<string, unknown>),
+      created: true,
+    };
+  }
+
+  throw new Error(fullInsert.error.message);
+}
+
+export async function createInappReview(input: {
+  storeId: number;
+  rating: number;
+  content: string;
+  authorName?: string | null;
+  isDisclosedAd?: boolean;
+}) {
+  const sb = supabaseServer();
+  const rating = Math.max(1, Math.min(5, Math.round(input.rating)));
+  const content = input.content.trim();
+  const authorName = input.authorName?.trim() || null;
+  const isDisclosedAd = Boolean(input.isDisclosedAd);
+
+  if (!content) {
+    throw new Error("리뷰 내용을 입력하세요.");
+  }
+
+  const payload = {
+    store_id: input.storeId,
+    source: "inapp",
+    rating,
+    content,
+    author_name: authorName,
+    is_disclosed_ad: isDisclosedAd,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  let saved: Omit<ReviewRecord, "latestAnalysis"> | null = null;
+  let tableMissingCount = 0;
+  let lastError: Error | null = null;
+
+  for (const tableName of REVIEW_TABLE_CANDIDATES) {
+    const full = await sb
+      .from(tableName)
+      .insert(payload)
+      .select("id, store_id, source, rating, content, author_name, is_disclosed_ad, created_at")
+      .single();
+
+    if (!full.error) {
+      saved = normalizeReviewRow(full.data as Record<string, unknown>);
+      break;
+    }
+
+    if (isMissingColumnError(full.error)) {
+      const minimalPayload = {
+        store_id: input.storeId,
+        rating,
+        content,
+        created_at: new Date().toISOString(),
+      };
+
+      const minimal = await sb
+        .from(tableName)
+        .insert(minimalPayload)
+        .select("id, store_id, rating, content, created_at")
+        .single();
+
+      if (!minimal.error) {
+        saved = normalizeReviewRow(minimal.data as Record<string, unknown>);
+        break;
+      }
+
+      if (isMissingTableError(minimal.error)) {
+        tableMissingCount += 1;
+        continue;
+      }
+
+      lastError = new Error(minimal.error.message);
+      break;
+    }
+
+    if (isMissingTableError(full.error)) {
+      tableMissingCount += 1;
+      continue;
+    }
+
+    lastError = new Error(full.error.message);
+    break;
+  }
+
+  if (!saved) {
+    if (tableMissingCount === REVIEW_TABLE_CANDIDATES.length) {
+      throw new Error(
+        "리뷰 테이블이 없습니다. Supabase에 reviews 또는 store_reviews 테이블을 생성하세요."
+      );
+    }
+    if (lastError) throw lastError;
+    throw new Error("리뷰 저장에 실패했습니다.");
+  }
+
+  const normalized = saved;
+  await persistAnalysisForReview(normalized);
+  const summary = await recomputeStoreMetrics(input.storeId);
+
+  const analysisMap = await loadLatestAnalysesByReviewIds([normalized.id]);
+
+  return {
+    savedReview: {
+      ...normalized,
+      latestAnalysis: analysisMap.get(normalized.id) ?? null,
+    } satisfies ReviewRecord,
+    summary,
+  };
+}
+
+export async function runIncrementalAnalysisBatch(options?: { limit?: number; force?: boolean }) {
+  const limit = Math.max(1, Math.min(200, options?.limit ?? 100));
+  const force = Boolean(options?.force);
+
+  const scanSize = Math.max(limit * 5, 100);
+  const reviews = await loadRecentReviewsForBatch(scanSize);
+  const analysisMap = await loadLatestAnalysesByReviewIds(reviews.map((review) => review.id));
+
+  const candidates = reviews
+    .filter((review) => force || !analysisMap.has(review.id))
+    .slice(0, limit);
+
+  const affectedStores = new Set<number>();
+
+  for (const review of candidates) {
+    await persistAnalysisForReview(review);
+    affectedStores.add(review.storeId);
+  }
+
+  for (const storeId of affectedStores) {
+    await recomputeStoreMetrics(storeId);
+  }
+
+  return {
+    scanned: reviews.length,
+    analyzed: candidates.length,
+    affectedStoreCount: affectedStores.size,
+    forced: force,
+  };
+}
+
+type KakaoCategoryItem = {
+  id: string;
+  place_name: string;
+  road_address_name: string;
+  address_name: string;
+  x: string;
+  y: string;
+};
+
+type KakaoCategoryCode = "FD6" | "CE7" | "CS2" | "MT1";
+
+const NATIONWIDE_CATEGORY_CODES: KakaoCategoryCode[] = ["FD6", "CE7", "CS2", "MT1"];
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchKakaoJsonWithRetry(url: URL, apiKey: string, options?: { retries?: number; baseDelayMs?: number }) {
+  const retries = Math.max(0, options?.retries ?? 4);
+  const baseDelayMs = Math.max(100, options?.baseDelayMs ?? 450);
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `KakaoAK ${apiKey}`,
+      },
+    });
+
+    if (response.ok) {
+      return response.json() as Promise<{
+        documents?: KakaoCategoryItem[];
+        meta?: { is_end?: boolean };
+      }>;
+    }
+
+    if (response.status !== 429 || attempt === retries) {
+      throw new Error(`카카오 API 호출 실패: ${response.status}`);
+    }
+
+    await wait(baseDelayMs * (attempt + 1));
+  }
+
+  throw new Error("카카오 API 호출 실패");
+}
+
+function range(start: number, end: number, step: number) {
+  const values: number[] = [];
+  for (let value = start; value <= end; value += step) {
+    values.push(Number(value.toFixed(6)));
+  }
+  return values;
+}
+
+export async function importAnseongRestaurantsFromKakao(options?: {
+  maxCenters?: number;
+}) {
+  const apiKey = process.env.KAKAO_REST_API_KEY;
+  if (!apiKey) {
+    throw new Error("KAKAO_REST_API_KEY 환경변수가 필요합니다.");
+  }
+
+  // 안성시 대략 범위. 누락/중복 대비로 격자 스캔 후 place id로 중복 제거.
+  const latMin = 36.92;
+  const latMax = 37.13;
+  const lonMin = 127.14;
+  const lonMax = 127.49;
+  const latStep = 0.05;
+  const lonStep = 0.06;
+  const radius = 3500;
+
+  const ys = range(latMin, latMax, latStep);
+  const xs = range(lonMin, lonMax, lonStep);
+
+  const centers: Array<{ lat: number; lon: number }> = [];
+  for (const lat of ys) {
+    for (const lon of xs) {
+      centers.push({ lat, lon });
+    }
+  }
+
+  const limitedCenters =
+    options?.maxCenters && options.maxCenters > 0
+      ? centers.slice(0, options.maxCenters)
+      : centers;
+
+  const byPlaceId = new Map<string, KakaoCategoryItem>();
+  let requestCount = 0;
+
+  for (const center of limitedCenters) {
+    for (let page = 1; page <= 45; page += 1) {
+      const url = new URL("https://dapi.kakao.com/v2/local/search/category.json");
+      url.searchParams.set("category_group_code", "FD6");
+      url.searchParams.set("x", String(center.lon));
+      url.searchParams.set("y", String(center.lat));
+      url.searchParams.set("radius", String(radius));
+      url.searchParams.set("page", String(page));
+      url.searchParams.set("size", "15");
+      url.searchParams.set("sort", "distance");
+
+      const json = await fetchKakaoJsonWithRetry(url, apiKey, {
+        retries: 5,
+        baseDelayMs: 550,
+      });
+      requestCount += 1;
+
+      const docs = json.documents ?? [];
+      for (const doc of docs) {
+        byPlaceId.set(doc.id, doc);
+      }
+
+      if (json.meta?.is_end) break;
+      await wait(100);
+    }
+  }
+
+  let createdCount = 0;
+  let duplicateCount = 0;
+
+  for (const place of byPlaceId.values()) {
+    const result = await createStore({
+      kakaoPlaceId: place.id,
+      name: place.place_name,
+      address: place.road_address_name || place.address_name || null,
+      latitude: Number(place.y),
+      longitude: Number(place.x),
+    });
+
+    if (result.created) createdCount += 1;
+    else duplicateCount += 1;
+  }
+
+  return {
+    centersScanned: limitedCenters.length,
+    kakaoRequestCount: requestCount,
+    foundPlaceCount: byPlaceId.size,
+    createdCount,
+    duplicateCount,
+  };
+}
+
+export async function importNationwideStoresFromKakao(options?: {
+  maxCenters?: number;
+  startIndex?: number;
+  categoryCodes?: KakaoCategoryCode[];
+  maxPagePerCenter?: number;
+  radius?: number;
+}) {
+  const apiKey = process.env.KAKAO_REST_API_KEY;
+  if (!apiKey) {
+    throw new Error("KAKAO_REST_API_KEY 환경변수가 필요합니다.");
+  }
+
+  // 대한민국 권역 대략 범위(제주 포함). 대규모 호출 방지를 위해 배치 실행 전제.
+  const latMin = 33.1;
+  const latMax = 38.5;
+  const lonMin = 124.7;
+  const lonMax = 131.0;
+  const latStep = 0.28;
+  const lonStep = 0.35;
+  const radius =
+    typeof options?.radius === "number" && Number.isFinite(options.radius)
+      ? Math.max(1000, Math.min(20000, Math.floor(options.radius)))
+      : 18000;
+  const maxPagePerCenter =
+    typeof options?.maxPagePerCenter === "number" && Number.isFinite(options.maxPagePerCenter)
+      ? Math.max(1, Math.min(45, Math.floor(options.maxPagePerCenter)))
+      : 6;
+
+  const ys = range(latMin, latMax, latStep);
+  const xs = range(lonMin, lonMax, lonStep);
+
+  const centers: Array<{ lat: number; lon: number }> = [];
+  for (const lat of ys) {
+    for (const lon of xs) {
+      centers.push({ lat, lon });
+    }
+  }
+
+  const startIndex =
+    typeof options?.startIndex === "number" && Number.isFinite(options.startIndex)
+      ? Math.max(0, Math.min(centers.length - 1, Math.floor(options.startIndex)))
+      : 0;
+
+  const maxCenters =
+    typeof options?.maxCenters === "number" && Number.isFinite(options.maxCenters)
+      ? Math.max(1, Math.min(80, Math.floor(options.maxCenters)))
+      : 20;
+
+  const endExclusive = Math.min(centers.length, startIndex + maxCenters);
+  const batchCenters = centers.slice(startIndex, endExclusive);
+
+  const categoryCodes =
+    options?.categoryCodes?.length
+      ? options.categoryCodes
+      : NATIONWIDE_CATEGORY_CODES;
+
+  const byPlaceId = new Map<string, KakaoCategoryItem>();
+  let requestCount = 0;
+
+  for (const center of batchCenters) {
+    for (const categoryCode of categoryCodes) {
+      for (let page = 1; page <= maxPagePerCenter; page += 1) {
+        const url = new URL("https://dapi.kakao.com/v2/local/search/category.json");
+        url.searchParams.set("category_group_code", categoryCode);
+        url.searchParams.set("x", String(center.lon));
+        url.searchParams.set("y", String(center.lat));
+        url.searchParams.set("radius", String(radius));
+        url.searchParams.set("page", String(page));
+        url.searchParams.set("size", "15");
+        url.searchParams.set("sort", "distance");
+
+        const json = await fetchKakaoJsonWithRetry(url, apiKey, {
+          retries: 5,
+          baseDelayMs: 550,
+        });
+        requestCount += 1;
+
+        const docs = json.documents ?? [];
+        for (const doc of docs) {
+          byPlaceId.set(doc.id, doc);
+        }
+
+        if (json.meta?.is_end) break;
+        await wait(100);
+      }
+    }
+  }
+
+  let createdCount = 0;
+  let duplicateCount = 0;
+
+  for (const place of byPlaceId.values()) {
+    const result = await createStore({
+      kakaoPlaceId: place.id,
+      name: place.place_name,
+      address: place.road_address_name || place.address_name || null,
+      latitude: Number(place.y),
+      longitude: Number(place.x),
+    });
+
+    if (result.created) createdCount += 1;
+    else duplicateCount += 1;
+  }
+
+  return {
+    totalCenters: centers.length,
+    startIndex,
+    endIndexExclusive: endExclusive,
+    nextStartIndex: endExclusive < centers.length ? endExclusive : null,
+    hasMore: endExclusive < centers.length,
+    centersScanned: batchCenters.length,
+    categoryCodes,
+    kakaoRequestCount: requestCount,
+    foundPlaceCount: byPlaceId.size,
+    createdCount,
+    duplicateCount,
+  };
+}
+
+type GooglePlaceSearchResponse = {
+  nextPageToken?: string;
+  places?: Array<{
+    id?: string;
+    name?: string;
+    displayName?: { text?: string };
+    formattedAddress?: string;
+    rating?: number;
+    userRatingCount?: number;
+    location?: { latitude?: number; longitude?: number };
+  }>;
+};
+
+function isAddressLikeQuery(keyword: string) {
+  return /(?:시|군|구|읍|면|동|로|길)/.test(keyword) || /\d{1,4}-?\d*/.test(keyword);
+}
+
+type GooglePlaceDetailsResponse = {
+  id?: string;
+  name?: string;
+  displayName?: { text?: string };
+  formattedAddress?: string;
+  rating?: number;
+  userRatingCount?: number;
+  reviews?: Array<{
+    name?: string;
+    rating?: number;
+    publishTime?: string;
+    relativePublishTimeDescription?: string;
+    text?: { text?: string };
+    originalText?: { text?: string };
+    authorAttribution?: { displayName?: string };
+  }>;
+};
+
+type ExternalReviewInsertInput = {
+  storeId: number;
+  rating: number;
+  content: string;
+  authorName?: string | null;
+  createdAt?: string | null;
+};
+
+function normalizeText(value: string | null | undefined) {
+  return (value ?? "").trim().replace(/\s+/g, " ");
+}
+
+function buildReviewDedupKey(input: {
+  rating: number;
+  content: string;
+  authorName?: string | null;
+}) {
+  return `${Math.round(input.rating * 10)}|${normalizeText(input.authorName)}|${normalizeText(input.content)}`;
+}
+
+async function fetchGoogleJsonWithRetry<T>(url: string, init: RequestInit, options?: { retries?: number; baseDelayMs?: number }) {
+  const retries = Math.max(0, options?.retries ?? 3);
+  const baseDelayMs = Math.max(120, options?.baseDelayMs ?? 500);
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const response = await fetch(url, init);
+    if (response.ok) return (await response.json()) as T;
+
+    const retryable = response.status === 429 || response.status >= 500;
+    if (!retryable || attempt === retries) {
+      throw new Error(`Google Places API 호출 실패: ${response.status}`);
+    }
+    await wait(baseDelayMs * (attempt + 1));
+  }
+
+  throw new Error("Google Places API 호출 실패");
+}
+
+async function findGooglePlaceForStore(apiKey: string, store: { name: string; address: string | null }) {
+  const query = `${store.name} ${store.address ?? ""}`.trim();
+  const payload = {
+    textQuery: query,
+    languageCode: "ko",
+    regionCode: "KR",
+    maxResultCount: 1,
+    includedType: "restaurant",
+    strictTypeFiltering: true,
+  };
+
+  const search = await fetchGoogleJsonWithRetry<GooglePlaceSearchResponse>(
+    "https://places.googleapis.com/v1/places:searchText",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask":
+          "places.id,places.name,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location",
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  return search.places?.[0] ?? null;
+}
+
+function reliabilityLabelBySnapshot(rating: number | null, reviewCount: number) {
+  if (reviewCount >= 300) return "안정적 평점";
+  if (reviewCount >= 120) return "비교적 안정";
+  if (rating !== null && rating >= 4.9 && reviewCount < 40) return "과대평가 가능성";
+  if (reviewCount >= 40) return "보통";
+  return "표본 부족";
+}
+
+async function refreshStoreExternalSnapshotIfStale(storeId: number) {
+
+  const sb = supabaseServer();
+  const currentFull = await sb
+    .from("stores")
+    .select(
+      "id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count"
+    )
+    .eq("id", storeId)
+    .single();
+
+  let row: Record<string, unknown> | null = null;
+  let geoColumnMissing = false;
+
+  if (!currentFull.error && currentFull.data) {
+    row = currentFull.data as Record<string, unknown>;
+  } else if (isMissingColumnError(currentFull.error)) {
+    geoColumnMissing = true;
+    const currentMinimal = await sb
+      .from("stores")
+      .select("id, name, address, external_rating, external_review_count")
+      .eq("id", storeId)
+      .single();
+    if (currentMinimal.error || !currentMinimal.data) {
+      throw new Error(currentMinimal.error?.message ?? "가게 정보를 찾지 못했습니다.");
+    }
+    row = currentMinimal.data as Record<string, unknown>;
+  } else {
+    throw new Error(currentFull.error?.message ?? "가게 정보를 찾지 못했습니다.");
+  }
+
+  if (!row) throw new Error("가게 정보를 찾지 못했습니다.");
+  const hasExternal = typeof row.external_rating === "number" && Number.isFinite(row.external_rating);
+  const hasGeo =
+    typeof row.latitude === "number" &&
+    Number.isFinite(row.latitude) &&
+    typeof row.longitude === "number" &&
+    Number.isFinite(row.longitude);
+  if (hasExternal && (hasGeo || geoColumnMissing)) {
+    return normalizeStoreRow(row);
+  }
+
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    return normalizeStoreRow(row);
+  }
+
+  const place = await findGooglePlaceForStore(apiKey, {
+    name: typeof row.name === "string" ? row.name : "",
+    address: typeof row.address === "string" ? row.address : null,
+  });
+  if (!place) {
+    return normalizeStoreRow(row);
+  }
+
+  const nextExternalRating =
+    typeof place.rating === "number" && Number.isFinite(place.rating) ? place.rating : null;
+  const nextExternalReviewCount =
+    typeof place.userRatingCount === "number" && Number.isFinite(place.userRatingCount)
+      ? Math.max(0, Math.round(place.userRatingCount))
+      : toNumber(row.external_review_count, 0) ?? 0;
+
+  const nextLatitude =
+    typeof row.latitude === "number" && Number.isFinite(row.latitude)
+      ? row.latitude
+      : typeof place.location?.latitude === "number" && Number.isFinite(place.location.latitude)
+        ? place.location.latitude
+        : null;
+  const nextLongitude =
+    typeof row.longitude === "number" && Number.isFinite(row.longitude)
+      ? row.longitude
+      : typeof place.location?.longitude === "number" && Number.isFinite(place.location.longitude)
+        ? place.location.longitude
+        : null;
+
+  const updatePayload = geoColumnMissing
+    ? {
+        external_rating: nextExternalRating,
+        external_review_count: nextExternalReviewCount,
+      }
+    : {
+        external_rating: nextExternalRating,
+        external_review_count: nextExternalReviewCount,
+        latitude: nextLatitude,
+        longitude: nextLongitude,
+      };
+
+  const updatedFull = await sb
+    .from("stores")
+    .update(updatePayload)
+    .eq("id", storeId)
+    .select(
+      "id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count"
+    )
+    .single();
+
+  let updatedData: Record<string, unknown> | null = null;
+  if (!updatedFull.error && updatedFull.data) {
+    updatedData = updatedFull.data as Record<string, unknown>;
+  } else if (isMissingColumnError(updatedFull.error)) {
+    const updatedMinimal = await sb
+      .from("stores")
+      .update({
+        external_rating: nextExternalRating,
+        external_review_count: nextExternalReviewCount,
+      })
+      .eq("id", storeId)
+      .select("id, name, address, external_rating, external_review_count")
+      .single();
+    if (!updatedMinimal.error && updatedMinimal.data) {
+      updatedData = updatedMinimal.data as Record<string, unknown>;
+    }
+  }
+
+  if (!updatedData) {
+    return {
+      ...normalizeStoreRow(row),
+      externalRating: nextExternalRating,
+      externalReviewCount: nextExternalReviewCount,
+      latitude: typeof nextLatitude === "number" ? nextLatitude : null,
+      longitude: typeof nextLongitude === "number" ? nextLongitude : null,
+    };
+  }
+
+  return normalizeStoreRow(updatedData);
+}
+
+async function ensureStoreGeo(store: StoreBase) {
+  const hasGeo =
+    typeof store.latitude === "number" &&
+    Number.isFinite(store.latitude) &&
+    typeof store.longitude === "number" &&
+    Number.isFinite(store.longitude);
+  if (hasGeo) return store;
+
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return store;
+
+  const place = await findGooglePlaceForStore(apiKey, {
+    name: store.name,
+    address: store.address,
+  }).catch(() => null);
+  const lat =
+    typeof place?.location?.latitude === "number" && Number.isFinite(place.location.latitude)
+      ? place.location.latitude
+      : null;
+  const lon =
+    typeof place?.location?.longitude === "number" && Number.isFinite(place.location.longitude)
+      ? place.location.longitude
+      : null;
+  if (lat === null || lon === null) return store;
+
+  const sb = supabaseServer();
+  const upd = await sb
+    .from("stores")
+    .update({ latitude: lat, longitude: lon })
+    .eq("id", store.id)
+    .select("id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count")
+    .single();
+
+  if (!upd.error && upd.data) {
+    return normalizeStoreRow(upd.data as Record<string, unknown>);
+  }
+  return { ...store, latitude: lat, longitude: lon };
+}
+
+async function importNearbyRestaurantsForStore(store: StoreBase) {
+  if (
+    typeof store.latitude !== "number" ||
+    typeof store.longitude !== "number" ||
+    !Number.isFinite(store.latitude) ||
+    !Number.isFinite(store.longitude)
+  ) {
+    return { imported: 0 };
+  }
+
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return { imported: 0 };
+
+  const nearbyRes = await fetchGoogleJsonWithRetry<{
+    places?: Array<{
+      displayName?: { text?: string };
+      formattedAddress?: string;
+      rating?: number;
+      userRatingCount?: number;
+      location?: { latitude?: number; longitude?: number };
+    }>;
+  }>("https://places.googleapis.com/v1/places:searchNearby", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey,
+      "X-Goog-FieldMask":
+        "places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location",
+    },
+    body: JSON.stringify({
+      includedTypes: ["restaurant"],
+      maxResultCount: 20,
+      languageCode: "ko",
+      regionCode: "KR",
+      locationRestriction: {
+        circle: {
+          center: { latitude: store.latitude, longitude: store.longitude },
+          radius: 1000,
+        },
+      },
+    }),
+  });
+
+  let imported = 0;
+  for (const place of nearbyRes.places ?? []) {
+    const name = place.displayName?.text?.trim() ?? "";
+    if (!name) continue;
+    const created = await createStore({
+      name,
+      address: place.formattedAddress ?? null,
+      latitude:
+        typeof place.location?.latitude === "number" && Number.isFinite(place.location.latitude)
+          ? place.location.latitude
+          : null,
+      longitude:
+        typeof place.location?.longitude === "number" && Number.isFinite(place.location.longitude)
+          ? place.location.longitude
+          : null,
+      externalRating:
+        typeof place.rating === "number" && Number.isFinite(place.rating) ? place.rating : null,
+      externalReviewCount:
+        typeof place.userRatingCount === "number" && Number.isFinite(place.userRatingCount)
+          ? Math.max(0, Math.round(place.userRatingCount))
+          : null,
+    });
+    if (created.created) imported += 1;
+  }
+
+  return { imported };
+}
+
+async function computeTopRankWithin1KmBySameLabel(store: StoreBase) {
+  if (
+    typeof store.latitude !== "number" ||
+    typeof store.longitude !== "number" ||
+    typeof store.externalRating !== "number"
+  ) {
+    return null;
+  }
+
+  const lat = store.latitude;
+  const lon = store.longitude;
+  const radiusKm = 1;
+  const latDelta = radiusKm / 111;
+  const lonDelta = radiusKm / (111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+
+  const sb = supabaseServer();
+  const { data, error } = await sb
+    .from("stores")
+    .select("id, name, address, latitude, longitude, external_rating, external_review_count")
+    .gte("latitude", lat - latDelta)
+    .lte("latitude", lat + latDelta)
+    .gte("longitude", lon - lonDelta)
+    .lte("longitude", lon + lonDelta)
+    .not("external_rating", "is", null)
+    .limit(500);
+
+  if (error || !data) {
+    if (isMissingColumnError(error)) return null;
+    return null;
+  }
+
+  const baseLabel = reliabilityLabelBySnapshot(
+    store.externalRating,
+    store.externalReviewCount ?? 0
+  );
+
+  const nearbyRaw = (data as Array<Record<string, unknown>>)
+    .map((row) => ({
+      id: toNumber(row.id, 0) ?? 0,
+      name: typeof row.name === "string" ? row.name : "이름없음",
+      address: typeof row.address === "string" ? row.address : null,
+      latitude: toNumber(row.latitude),
+      longitude: toNumber(row.longitude),
+      rating: toNumber(row.external_rating),
+      reviewCount: toNumber(row.external_review_count, 0) ?? 0,
+    }))
+    .filter(
+      (row) =>
+        typeof row.latitude === "number" &&
+        typeof row.longitude === "number" &&
+        typeof row.rating === "number" &&
+        distanceKm(lat, lon, row.latitude, row.longitude) <= radiusKm
+    )
+    .filter((row) => reliabilityLabelBySnapshot(row.rating, row.reviewCount) === baseLabel)
+    .sort((a, b) => {
+      if ((b.rating as number) !== (a.rating as number)) {
+        return (b.rating as number) - (a.rating as number);
+      }
+      return (b.reviewCount as number) - (a.reviewCount as number);
+    });
+
+  const byKey = new Map<string, (typeof nearbyRaw)[number]>();
+  for (const row of nearbyRaw) {
+    const key = `${normalizeNameKey(row.name)}|${normalizeAddressKey(row.address)}`;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, row);
+      continue;
+    }
+    if (row.id === store.id) {
+      byKey.set(key, row);
+    }
+  }
+  const nearby = Array.from(byKey.values()).sort((a, b) => {
+    if ((b.rating as number) !== (a.rating as number)) {
+      return (b.rating as number) - (a.rating as number);
+    }
+    return (b.reviewCount as number) - (a.reviewCount as number);
+  });
+
+  if (!nearby.length) return null;
+  const index = Math.max(
+    0,
+    nearby.findIndex((row) => row.id === store.id)
+  );
+  const rank = index + 1;
+  const total = nearby.length;
+  const topPercent = Math.max(1, Math.round((rank / total) * 100));
+  const comparedStores = nearby.map((row, idx) => ({
+    id: row.id,
+    name: row.name,
+    address: row.address,
+    rank: idx + 1,
+    rating: row.rating as number,
+    reviewCount: row.reviewCount,
+    isSelf: row.id === store.id,
+  }));
+  if (total >= 3) {
+    return { rank, total, topPercent, label: baseLabel, comparedStores };
+  }
+
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    return { rank, total, topPercent, label: baseLabel, comparedStores };
+  }
+
+  try {
+    const nearbyRes = await fetchGoogleJsonWithRetry<{
+      places?: Array<{
+        id?: string;
+        displayName?: { text?: string };
+        formattedAddress?: string;
+        rating?: number;
+        userRatingCount?: number;
+      }>;
+    }>("https://places.googleapis.com/v1/places:searchNearby", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask":
+          "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount",
+      },
+      body: JSON.stringify({
+        includedTypes: ["restaurant"],
+        maxResultCount: 20,
+        languageCode: "ko",
+        regionCode: "KR",
+        locationRestriction: {
+          circle: {
+            center: { latitude: lat, longitude: lon },
+            radius: 1000,
+          },
+        },
+      }),
+    });
+
+    const candidates = (nearbyRes.places ?? [])
+      .map((place) => ({
+        id: place.id ?? "",
+        name: place.displayName?.text ?? "주변 가게",
+        address: place.formattedAddress ?? null,
+        rating:
+          typeof place.rating === "number" && Number.isFinite(place.rating)
+            ? place.rating
+            : null,
+        reviewCount:
+          typeof place.userRatingCount === "number" && Number.isFinite(place.userRatingCount)
+            ? Math.max(0, Math.round(place.userRatingCount))
+            : 0,
+      }))
+      .filter((row) => typeof row.rating === "number")
+      .filter((row) => reliabilityLabelBySnapshot(row.rating, row.reviewCount) === baseLabel)
+      .sort((a, b) => {
+        if ((b.rating as number) !== (a.rating as number)) return (b.rating as number) - (a.rating as number);
+        return b.reviewCount - a.reviewCount;
+      });
+
+    const self = {
+      id: `store-${store.id}`,
+      name: store.name,
+      address: store.address ?? null,
+      rating: store.externalRating,
+      reviewCount: store.externalReviewCount ?? 0,
+    };
+    const mergedRaw = [...candidates, self]
+      .filter((row) => typeof row.rating === "number")
+      .sort((a, b) => {
+        if ((b.rating as number) !== (a.rating as number)) return (b.rating as number) - (a.rating as number);
+        return b.reviewCount - a.reviewCount;
+      });
+
+    const mergedMap = new Map<string, (typeof mergedRaw)[number]>();
+    for (const row of mergedRaw) {
+      const key = `${normalizeNameKey(row.name ?? "")}|${normalizeAddressKey(row.address ?? null)}`;
+      const prev = mergedMap.get(key);
+      if (!prev) {
+        mergedMap.set(key, row);
+        continue;
+      }
+      if (row.id === self.id) {
+        mergedMap.set(key, row);
+      }
+    }
+    const merged = Array.from(mergedMap.values()).sort((a, b) => {
+      if ((b.rating as number) !== (a.rating as number)) return (b.rating as number) - (a.rating as number);
+      return b.reviewCount - a.reviewCount;
+    });
+
+    const selfIndex = merged.findIndex((row) => row.id === self.id);
+    if (selfIndex >= 0) {
+      const nextRank = selfIndex + 1;
+      const nextTotal = merged.length;
+      const nextTopPercent = Math.max(1, Math.round((nextRank / nextTotal) * 100));
+      const nearbyComparedStores = merged.map((row, idx) => ({
+        id: row.id,
+        name: row.name,
+        address: row.address,
+        rank: idx + 1,
+        rating: row.rating as number,
+        reviewCount: row.reviewCount,
+        isSelf: row.id === self.id,
+      }));
+      return {
+        rank: nextRank,
+        total: nextTotal,
+        topPercent: nextTopPercent,
+        label: baseLabel,
+        comparedStores: nearbyComparedStores,
+      };
+    }
+  } catch {
+    // Ignore nearby API failure and fall back to DB-derived rank.
+  }
+
+  return { rank, total, topPercent, label: baseLabel, comparedStores };
+}
+
+async function searchGooglePlacesByKeyword(keyword: string, size = 10) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return [] as Array<{
+    id: string | null;
+    name: string | null;
+    address: string | null;
+    latitude: number | null;
+    longitude: number | null;
+  }>;
+
+  const target = Math.max(1, Math.min(60, Math.floor(size)));
+  const collected: Array<{
+    id: string | null;
+    name: string | null;
+    address: string | null;
+    latitude: number | null;
+    longitude: number | null;
+  }> = [];
+  const dedup = new Set<string>();
+
+  let pageToken: string | undefined = undefined;
+  for (let page = 0; page < 3 && collected.length < target; page += 1) {
+    const response = await fetchGoogleJsonWithRetry<GooglePlaceSearchResponse>(
+      "https://places.googleapis.com/v1/places:searchText",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask":
+            "places.id,places.displayName,places.formattedAddress,places.location,nextPageToken",
+        },
+        body: JSON.stringify({
+          textQuery: keyword,
+          languageCode: "ko",
+          regionCode: "KR",
+          maxResultCount: 20,
+          includedType: "restaurant",
+          strictTypeFiltering: true,
+          ...(pageToken ? { pageToken } : {}),
+        }),
+      }
+    );
+
+    const mapped = (response.places ?? []).map((row) => {
+      const place = row as {
+        id?: string;
+        displayName?: { text?: string };
+        formattedAddress?: string;
+        location?: { latitude?: number; longitude?: number };
+      };
+      return {
+        id: place.id ?? null,
+        name: place.displayName?.text ?? null,
+        address: place.formattedAddress ?? null,
+        latitude:
+          typeof place.location?.latitude === "number" && Number.isFinite(place.location.latitude)
+            ? place.location.latitude
+            : null,
+        longitude:
+          typeof place.location?.longitude === "number" && Number.isFinite(place.location.longitude)
+            ? place.location.longitude
+            : null,
+      };
+    });
+
+    for (const item of mapped) {
+      const key = `${item.name ?? ""}|${item.address ?? ""}`;
+      if (dedup.has(key)) continue;
+      dedup.add(key);
+      collected.push(item);
+      if (collected.length >= target) break;
+    }
+
+    pageToken = response.nextPageToken;
+    if (!pageToken) break;
+    await wait(900);
+  }
+
+  const ranked = collected
+    .map((row) => ({
+      ...row,
+      relevance: queryRelevanceScore(keyword, row.name, row.address),
+    }))
+    .filter((row) => row.relevance >= 20)
+    .sort((a, b) => b.relevance - a.relevance);
+
+  return ranked.slice(0, target).map((item) => {
+    const { relevance, ...row } = item;
+    void relevance;
+    return row;
+  });
+}
+
+async function searchGoogleNearbyRestaurantsAroundAddress(keyword: string, size = 20) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return [] as Array<{
+    id: string | null;
+    name: string | null;
+    address: string | null;
+    latitude: number | null;
+    longitude: number | null;
+  }>;
+
+  const centerResponse = await fetchGoogleJsonWithRetry<GooglePlaceSearchResponse>(
+    "https://places.googleapis.com/v1/places:searchText",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": "places.location",
+      },
+      body: JSON.stringify({
+        textQuery: keyword,
+        languageCode: "ko",
+        regionCode: "KR",
+        maxResultCount: 1,
+      }),
+    }
+  );
+
+  const center = centerResponse.places?.[0]?.location;
+  if (
+    typeof center?.latitude !== "number" ||
+    !Number.isFinite(center.latitude) ||
+    typeof center?.longitude !== "number" ||
+    !Number.isFinite(center.longitude)
+  ) {
+    return [];
+  }
+
+  const nearby = await fetchGoogleJsonWithRetry<GooglePlaceSearchResponse>(
+    "https://places.googleapis.com/v1/places:searchNearby",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location",
+      },
+      body: JSON.stringify({
+        includedTypes: ["restaurant"],
+        maxResultCount: Math.max(1, Math.min(20, Math.floor(size))),
+        languageCode: "ko",
+        regionCode: "KR",
+        locationRestriction: {
+          circle: {
+            center: {
+              latitude: center.latitude,
+              longitude: center.longitude,
+            },
+            radius: 1000,
+          },
+        },
+      }),
+    }
+  );
+
+  const rows = (nearby.places ?? []).map((row) => {
+    const place = row as {
+      id?: string;
+      displayName?: { text?: string };
+      formattedAddress?: string;
+      location?: { latitude?: number; longitude?: number };
+    };
+    return {
+      id: place.id ?? null,
+      name: place.displayName?.text ?? null,
+      address: place.formattedAddress ?? null,
+      latitude:
+        typeof place.location?.latitude === "number" && Number.isFinite(place.location.latitude)
+          ? place.location.latitude
+          : null,
+      longitude:
+        typeof place.location?.longitude === "number" && Number.isFinite(place.location.longitude)
+          ? place.location.longitude
+          : null,
+    };
+  });
+
+  const ranked = rows
+    .map((row) => ({
+      ...row,
+      relevance: queryRelevanceScore(keyword, row.name, row.address),
+    }))
+    .filter((row) => row.relevance >= 8)
+    .sort((a, b) => b.relevance - a.relevance);
+
+  return ranked.slice(0, Math.max(1, Math.min(20, Math.floor(size)))).map((item) => {
+    const { relevance, ...row } = item;
+    void relevance;
+    return row;
+  });
+}
+
+export async function searchAndAutoRegisterStoreByKeyword(
+  keyword: string,
+  limit = 20,
+  userLocation?: { latitude: number; longitude: number } | null,
+  offset = 0
+) {
+  const normalizedKeyword = keyword.trim();
+  if (!normalizedKeyword) {
+    return {
+      stores: [] as StoreWithSummary[],
+      autoRegistered: false,
+      source: null as "google" | null,
+      hasMore: false,
+      nextOffset: null as number | null,
+    };
+  }
+
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const safeLimit = Math.max(1, Math.min(30, Math.floor(limit)));
+  const desiredCount = safeOffset + safeLimit + 1;
+  const fetchTarget = Math.max(40, desiredCount);
+
+  const existing = await findRegisteredStoresByKeyword(normalizedKeyword, fetchTarget);
+  const combined = new Map<number, StoreBase>();
+  for (const store of existing) combined.set(store.id, store);
+
+  let usedGoogle = false;
+  let autoRegistered = false;
+
+  if (combined.size < fetchTarget) {
+    const googleCandidates = await searchGooglePlacesByKeyword(normalizedKeyword, fetchTarget);
+    if (googleCandidates.length) {
+      usedGoogle = true;
+      for (const row of googleCandidates) {
+        if (!row.name) continue;
+        const created = await createStore({
+          name: row.name,
+          address: row.address,
+          latitude: row.latitude,
+          longitude: row.longitude,
+        });
+        if (created.created) autoRegistered = true;
+        combined.set(created.store.id, created.store);
+      }
+    }
+
+    if (isAddressLikeQuery(normalizedKeyword) && combined.size < fetchTarget) {
+      const nearbyCandidates = await searchGoogleNearbyRestaurantsAroundAddress(
+        normalizedKeyword,
+        fetchTarget
+      );
+      if (nearbyCandidates.length) {
+        usedGoogle = true;
+        for (const row of nearbyCandidates) {
+          if (!row.name) continue;
+          const created = await createStore({
+            name: row.name,
+            address: row.address,
+            latitude: row.latitude,
+            longitude: row.longitude,
+          });
+          if (created.created) autoRegistered = true;
+          combined.set(created.store.id, created.store);
+        }
+      }
+    }
+  }
+
+  if (!combined.size) {
+    return {
+      stores: [] as StoreWithSummary[],
+      autoRegistered: false,
+      source: null as "google" | null,
+      hasMore: false,
+      nextOffset: null as number | null,
+    };
+  }
+
+  const enriched = await enrichStoresWithSummary(Array.from(combined.values()));
+  const sorted = sortByNearest(enriched, userLocation);
+  const page = sorted.slice(safeOffset, safeOffset + safeLimit);
+  const refreshedAll = await Promise.all(
+    page.map(async (row) => {
+      const latest = await refreshStoreExternalSnapshotIfStale(row.id);
+      return { ...row, ...latest };
+    })
+  );
+  const refreshed = refreshedAll;
+  const hasMore = sorted.length > safeOffset + safeLimit;
+
+  return {
+    stores: refreshed,
+    autoRegistered,
+    source: usedGoogle ? ("google" as const) : (null as "google" | null),
+    hasMore,
+    nextOffset: hasMore ? safeOffset + safeLimit : null,
+  };
+}
+
+export async function backfillStoreGeoFromGoogle(options?: {
+  limit?: number;
+  offset?: number;
+  onlyMissing?: boolean;
+}) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    throw new Error("GOOGLE_PLACES_API_KEY 또는 GOOGLE_MAPS_API_KEY 환경변수가 필요합니다.");
+  }
+
+  const limit =
+    typeof options?.limit === "number" && Number.isFinite(options.limit)
+      ? Math.max(1, Math.min(200, Math.floor(options.limit)))
+      : 50;
+  const offset =
+    typeof options?.offset === "number" && Number.isFinite(options.offset)
+      ? Math.max(0, Math.floor(options.offset))
+      : 0;
+  const onlyMissing = options?.onlyMissing !== false;
+
+  const sb = supabaseServer();
+  let query = sb
+    .from("stores")
+    .select("id, name, address, latitude, longitude, external_rating, external_review_count")
+    .order("id", { ascending: true })
+    .range(offset, offset + limit - 1);
+
+  if (onlyMissing) {
+    query = query.or("latitude.is.null,longitude.is.null");
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (isMissingColumnError(error)) {
+      throw new Error("stores.latitude/longitude 컬럼이 없습니다. schema.sql을 먼저 적용하세요.");
+    }
+    throw new Error(error.message);
+  }
+
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  let scanned = 0;
+  let updated = 0;
+  let noMatch = 0;
+  let skippedHasGeo = 0;
+
+  for (const row of rows) {
+    scanned += 1;
+    const id = toNumber(row.id, 0) ?? 0;
+    const name = typeof row.name === "string" ? row.name : "";
+    const address = typeof row.address === "string" ? row.address : null;
+    const hasGeo =
+      typeof row.latitude === "number" &&
+      Number.isFinite(row.latitude) &&
+      typeof row.longitude === "number" &&
+      Number.isFinite(row.longitude);
+
+    if (!id || !name) continue;
+    if (hasGeo) {
+      skippedHasGeo += 1;
+      continue;
+    }
+
+    const place = await findGooglePlaceForStore(apiKey, { name, address });
+    const lat =
+      typeof place?.location?.latitude === "number" && Number.isFinite(place.location.latitude)
+        ? place.location.latitude
+        : null;
+    const lon =
+      typeof place?.location?.longitude === "number" && Number.isFinite(place.location.longitude)
+        ? place.location.longitude
+        : null;
+
+    if (lat === null || lon === null) {
+      noMatch += 1;
+      continue;
+    }
+
+    const extRating =
+      typeof place?.rating === "number" && Number.isFinite(place.rating)
+        ? place.rating
+        : toNumber(row.external_rating);
+    const extCount =
+      typeof place?.userRatingCount === "number" && Number.isFinite(place.userRatingCount)
+        ? Math.max(0, Math.round(place.userRatingCount))
+        : toNumber(row.external_review_count, 0) ?? 0;
+
+    const upd = await sb
+      .from("stores")
+      .update({
+        latitude: lat,
+        longitude: lon,
+        external_rating: extRating,
+        external_review_count: extCount,
+      })
+      .eq("id", id);
+    if (!upd.error) {
+      updated += 1;
+    }
+
+    await wait(120);
+  }
+
+  return {
+    scanned,
+    updated,
+    noMatch,
+    skippedHasGeo,
+    nextOffset: offset + rows.length,
+    hasMore: rows.length === limit,
+  };
+}
+
+function chooseCanonicalStore(rows: StoreBase[]) {
+  return [...rows].sort((a, b) => {
+    const aGeo = a.latitude !== null && a.longitude !== null ? 1 : 0;
+    const bGeo = b.latitude !== null && b.longitude !== null ? 1 : 0;
+    if (aGeo !== bGeo) return bGeo - aGeo;
+
+    const aKakao = a.kakaoPlaceId ? 1 : 0;
+    const bKakao = b.kakaoPlaceId ? 1 : 0;
+    if (aKakao !== bKakao) return bKakao - aKakao;
+
+    const aCount = a.externalReviewCount ?? 0;
+    const bCount = b.externalReviewCount ?? 0;
+    if (aCount !== bCount) return bCount - aCount;
+
+    const aRating = a.externalRating ?? 0;
+    const bRating = b.externalRating ?? 0;
+    if (aRating !== bRating) return bRating - aRating;
+
+    return a.id - b.id;
+  })[0];
+}
+
+export async function dedupeStoresByNormalizedNameAddress(options?: {
+  dryRun?: boolean;
+  maxGroups?: number;
+}) {
+  const dryRun = Boolean(options?.dryRun);
+  const maxGroups =
+    typeof options?.maxGroups === "number" && Number.isFinite(options.maxGroups)
+      ? Math.max(1, Math.min(2000, Math.floor(options.maxGroups)))
+      : 300;
+
+  const sb = supabaseServer();
+  const rows: StoreBase[] = [];
+  const pageSize = 1000;
+  let lastId = 0;
+
+  for (;;) {
+    const full = await sb
+      .from("stores")
+      .select("id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count")
+      .order("id", { ascending: true })
+      .gt("id", lastId)
+      .limit(pageSize);
+
+    let pageRows: StoreBase[] = [];
+    if (!full.error) {
+      pageRows = (full.data ?? []).map((row) => normalizeStoreRow(row as Record<string, unknown>));
+    } else if (isMissingColumnError(full.error)) {
+      const minimal = await sb
+        .from("stores")
+        .select("id, name, address, latitude, longitude, external_rating, external_review_count")
+        .order("id", { ascending: true })
+        .gt("id", lastId)
+        .limit(pageSize);
+      if (minimal.error) throw new Error(minimal.error.message);
+      pageRows = (minimal.data ?? []).map((row) => normalizeStoreRow(row as Record<string, unknown>));
+    } else {
+      throw new Error(full.error.message);
+    }
+
+    if (!pageRows.length) break;
+    rows.push(...pageRows);
+    lastId = pageRows[pageRows.length - 1]?.id ?? lastId;
+    if (pageRows.length < pageSize) break;
+  }
+  const grouped = new Map<string, StoreBase[]>();
+
+  for (const row of rows) {
+    const key = `${normalizeNameKey(row.name)}|${normalizeAddressKey(row.address)}`;
+    if (!key || key === "|") continue;
+    const bucket = grouped.get(key);
+    if (bucket) bucket.push(row);
+    else grouped.set(key, [row]);
+  }
+
+  const groups = Array.from(grouped.values())
+    .filter((bucket) => bucket.length >= 2)
+    .slice(0, maxGroups);
+
+  if (dryRun) {
+    return {
+      dryRun: true,
+      groupCount: groups.length,
+      mergeStoreCount: groups.reduce((sum, g) => sum + (g.length - 1), 0),
+      samples: groups.slice(0, 20).map((bucket) => ({
+        canonical: chooseCanonicalStore(bucket),
+        duplicates: bucket.map((row) => row.id),
+      })),
+    };
+  }
+
+  let processedGroups = 0;
+  let mergedStores = 0;
+  const errors: Array<{ group: string; error: string }> = [];
+
+  for (const bucket of groups) {
+    const canonical = chooseCanonicalStore(bucket);
+    const sourceIds = bucket.filter((row) => row.id !== canonical.id).map((row) => row.id);
+    if (!sourceIds.length) continue;
+
+    try {
+      for (const tableName of REVIEW_TABLE_CANDIDATES) {
+        const upd = await sb
+          .from(tableName)
+          .update({ store_id: canonical.id })
+          .in("store_id", sourceIds);
+        if (upd.error && !isMissingTableError(upd.error) && !isMissingColumnError(upd.error)) {
+          throw new Error(`${tableName}: ${upd.error.message}`);
+        }
+      }
+
+      const updAnalyses = await sb
+        .from("review_analyses")
+        .update({ store_id: canonical.id })
+        .in("store_id", sourceIds);
+      if (
+        updAnalyses.error &&
+        !isMissingTableError(updAnalyses.error) &&
+        !isMissingColumnError(updAnalyses.error)
+      ) {
+        throw new Error(`review_analyses: ${updAnalyses.error.message}`);
+      }
+
+      const delMetrics = await sb.from("store_metrics").delete().in("store_id", sourceIds);
+      if (
+        delMetrics.error &&
+        !isMissingTableError(delMetrics.error) &&
+        !isMissingColumnError(delMetrics.error)
+      ) {
+        throw new Error(`store_metrics: ${delMetrics.error.message}`);
+      }
+
+      const delGoogleCache = await sb
+        .from("google_review_cache")
+        .delete()
+        .in("store_id", sourceIds);
+      if (
+        delGoogleCache.error &&
+        !isMissingTableError(delGoogleCache.error) &&
+        !isMissingColumnError(delGoogleCache.error)
+      ) {
+        throw new Error(`google_review_cache: ${delGoogleCache.error.message}`);
+      }
+
+      const delNaverCache = await sb
+        .from("naver_signal_cache")
+        .delete()
+        .in("store_id", sourceIds);
+      if (
+        delNaverCache.error &&
+        !isMissingTableError(delNaverCache.error) &&
+        !isMissingColumnError(delNaverCache.error)
+      ) {
+        throw new Error(`naver_signal_cache: ${delNaverCache.error.message}`);
+      }
+
+      const delStores = await sb.from("stores").delete().in("id", sourceIds);
+      if (delStores.error) throw new Error(`stores: ${delStores.error.message}`);
+
+      await recomputeStoreMetrics(canonical.id);
+      processedGroups += 1;
+      mergedStores += sourceIds.length;
+      await wait(50);
+    } catch (e) {
+      errors.push({
+        group: `${canonical.name}|${canonical.address ?? ""}`,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  return {
+    dryRun: false,
+    groupCount: groups.length,
+    processedGroups,
+    mergedStores,
+    errors,
+  };
+}
+
+async function getGooglePlaceDetails(apiKey: string, placeResourceOrId: string) {
+  const placePath = placeResourceOrId.startsWith("places/")
+    ? placeResourceOrId
+    : `places/${placeResourceOrId}`;
+
+  return fetchGoogleJsonWithRetry<GooglePlaceDetailsResponse>(
+    `https://places.googleapis.com/v1/${placePath}?languageCode=ko&regionCode=KR`,
+    {
+      method: "GET",
+      headers: {
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": "id,name,displayName,formattedAddress,rating,userRatingCount,reviews",
+      },
+    }
+  );
+}
+
+async function updateStoreExternalMeta(input: {
+  storeId: number;
+  externalRating: number | null;
+  externalReviewCount: number | null;
+}) {
+  const sb = supabaseServer();
+  const payload = {
+    external_rating: input.externalRating,
+    external_review_count: input.externalReviewCount ?? 0,
+    updated_at: new Date().toISOString(),
+  };
+
+  const full = await sb.from("stores").update(payload).eq("id", input.storeId);
+  if (!full.error) return;
+
+  if (isMissingColumnError(full.error)) {
+    const minimal = await sb
+      .from("stores")
+      .update({
+        external_rating: payload.external_rating,
+        external_review_count: payload.external_review_count,
+      })
+      .eq("id", input.storeId);
+    if (!minimal.error) return;
+    throw new Error(minimal.error.message);
+  }
+
+  throw new Error(full.error.message);
+}
+
+async function insertExternalReview(input: ExternalReviewInsertInput) {
+  const sb = supabaseServer();
+  const rating = Math.max(1, Math.min(5, input.rating));
+  const content = input.content.trim();
+  const authorName = input.authorName?.trim() || null;
+  const createdAt =
+    input.createdAt && !Number.isNaN(Date.parse(input.createdAt))
+      ? new Date(input.createdAt).toISOString()
+      : new Date().toISOString();
+
+  if (!content) return false;
+
+  const payload = {
+    store_id: input.storeId,
+    source: "external",
+    rating,
+    content,
+    author_name: authorName,
+    is_disclosed_ad: false,
+    created_at: createdAt,
+    updated_at: new Date().toISOString(),
+  };
+
+  for (const tableName of REVIEW_TABLE_CANDIDATES) {
+    const full = await sb
+      .from(tableName)
+      .insert(payload)
+      .select("id, store_id, source, rating, content, author_name, is_disclosed_ad, created_at")
+      .single();
+
+    if (!full.error) {
+      const saved = normalizeReviewRow(full.data as Record<string, unknown>);
+      await persistAnalysisForReview(saved);
+      return true;
+    }
+
+    if (full.error.code === "23502" && /user_id/i.test(full.error.message)) {
+      // Legacy schema can enforce non-null user_id on reviews table.
+      continue;
+    }
+
+    if (isMissingColumnError(full.error)) {
+      const minimal = await sb
+        .from(tableName)
+        .insert({
+          store_id: input.storeId,
+          rating,
+          content,
+          created_at: createdAt,
+        })
+        .select("id, store_id, rating, content, created_at")
+        .single();
+
+      if (!minimal.error) {
+        const saved = normalizeReviewRow(minimal.data as Record<string, unknown>);
+        await persistAnalysisForReview(saved);
+        return true;
+      }
+
+      if (minimal.error.code === "23502" && /user_id/i.test(minimal.error.message)) {
+        continue;
+      }
+
+      if (isMissingTableError(minimal.error)) continue;
+      throw new Error(minimal.error.message);
+    }
+
+    if (isMissingTableError(full.error)) continue;
+    throw new Error(full.error.message);
+  }
+
+  return false;
+}
+
+export async function importGoogleReviewsForRegisteredStores(options?: {
+  limit?: number;
+  offset?: number;
+}) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    throw new Error("GOOGLE_PLACES_API_KEY 또는 GOOGLE_MAPS_API_KEY 환경변수가 필요합니다.");
+  }
+
+  const limit =
+    typeof options?.limit === "number" && Number.isFinite(options.limit)
+      ? Math.max(1, Math.min(100, Math.floor(options.limit)))
+      : 20;
+  const offset =
+    typeof options?.offset === "number" && Number.isFinite(options.offset)
+      ? Math.max(0, Math.floor(options.offset))
+      : 0;
+
+  const sb = supabaseServer();
+  const { data: stores, error } = await sb
+    .from("stores")
+    .select("id, name, address")
+    .order("id", { ascending: true })
+    .range(offset, offset + limit - 1);
+
+  if (error) throw new Error(error.message);
+  const rows = (stores ?? []) as Array<{ id: number; name: string; address: string | null }>;
+
+  let matchedCount = 0;
+  let metaUpdatedCount = 0;
+  let reviewInsertedCount = 0;
+  let skippedDuplicateCount = 0;
+  const affectedStoreIds = new Set<number>();
+
+  for (const store of rows) {
+    const place = await findGooglePlaceForStore(apiKey, store);
+    if (!place) {
+      await wait(120);
+      continue;
+    }
+
+    matchedCount += 1;
+    const details = await getGooglePlaceDetails(apiKey, place.name || place.id || "");
+    const extRating =
+      typeof details.rating === "number" && Number.isFinite(details.rating)
+        ? details.rating
+        : null;
+    const extReviewCount =
+      typeof details.userRatingCount === "number" && Number.isFinite(details.userRatingCount)
+        ? Math.max(0, Math.round(details.userRatingCount))
+        : null;
+
+    await updateStoreExternalMeta({
+      storeId: store.id,
+      externalRating: extRating,
+      externalReviewCount: extReviewCount,
+    });
+    metaUpdatedCount += 1;
+
+    const existing = await loadReviewsByStoreIds([store.id]);
+    const dedup = new Set(
+      existing.map((review) =>
+        buildReviewDedupKey({
+          rating: review.rating,
+          content: review.content,
+          authorName: review.authorName,
+        })
+      )
+    );
+
+    for (const review of details.reviews ?? []) {
+      const content = review.text?.text || review.originalText?.text || "";
+      const rating =
+        typeof review.rating === "number" && Number.isFinite(review.rating)
+          ? review.rating
+          : extRating ?? 3;
+      const authorName = review.authorAttribution?.displayName || null;
+      const key = buildReviewDedupKey({ rating, content, authorName });
+
+      if (!content.trim()) continue;
+      if (dedup.has(key)) {
+        skippedDuplicateCount += 1;
+        continue;
+      }
+
+      const inserted = await insertExternalReview({
+        storeId: store.id,
+        rating,
+        content,
+        authorName,
+        createdAt: review.publishTime || null,
+      });
+
+      if (inserted) {
+        reviewInsertedCount += 1;
+        dedup.add(key);
+      }
+    }
+
+    affectedStoreIds.add(store.id);
+    await wait(140);
+  }
+
+  for (const storeId of affectedStoreIds) {
+    await recomputeStoreMetrics(storeId);
+  }
+
+  return {
+    scannedStoreCount: rows.length,
+    matchedStoreCount: matchedCount,
+    externalMetaUpdatedCount: metaUpdatedCount,
+    reviewInsertedCount,
+    skippedDuplicateCount,
+    affectedStoreCount: affectedStoreIds.size,
+    nextOffset: offset + rows.length,
+    hasMore: rows.length === limit,
+  };
+}
+
+type GoogleReviewAiResult = {
+  found: boolean;
+  place: {
+    id: string | null;
+    name: string | null;
+    address: string | null;
+    externalRating: number | null;
+    externalReviewCount: number | null;
+  } | null;
+  summary: {
+    reviewCount: number;
+    trustScore: number;
+    adSuspectRatio: number;
+    fallbackUsed: boolean;
+    providerCounts: {
+      gemini: number;
+      openai: number;
+      heuristic: number;
+    };
+  } | null;
+  reviews: Array<{
+    authorName: string | null;
+    rating: number;
+    content: string;
+    publishedAt: string | null;
+    adAny: number;
+    trustScore: number;
+    reasonSummary: string;
+    provider: "gemini" | "openai" | "heuristic";
+  }>;
+};
+
+function isGoogleReviewAiResult(value: unknown): value is GoogleReviewAiResult {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.found === "boolean" && Array.isArray(row.reviews);
+}
+
+async function loadGoogleReviewCache(storeId: number) {
+  const sb = supabaseServer();
+  const { data, error } = await sb
+    .from("google_review_cache")
+    .select("payload, updated_at")
+    .eq("store_id", storeId)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    if (isMissingTableError(error)) return null;
+    throw new Error(error.message);
+  }
+
+  const row = Array.isArray(data) ? data[0] : null;
+  const payload = (row as { payload?: unknown } | null)?.payload;
+  if (!isGoogleReviewAiResult(payload)) return null;
+
+  const updatedAt =
+    typeof (row as { updated_at?: unknown } | null)?.updated_at === "string"
+      ? ((row as { updated_at: string }).updated_at as string)
+      : null;
+
+  return {
+    payload,
+    updatedAt,
+  };
+}
+
+async function saveGoogleReviewCache(storeId: number, payload: GoogleReviewAiResult) {
+  const sb = supabaseServer();
+  const { error } = await sb.from("google_review_cache").upsert(
+    {
+      store_id: storeId,
+      payload,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "store_id" }
+  );
+
+  if (error && !isMissingTableError(error)) {
+    throw new Error(error.message);
+  }
+}
+
+export async function getGoogleReviewsWithAiForStore(
+  storeId: number,
+  options?: { maxReviews?: number; forceRefresh?: boolean; maxAgeHours?: number }
+) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    throw new Error("GOOGLE_PLACES_API_KEY 또는 GOOGLE_MAPS_API_KEY 환경변수가 필요합니다.");
+  }
+
+  const maxReviews =
+    typeof options?.maxReviews === "number" && Number.isFinite(options.maxReviews)
+      ? Math.max(1, Math.min(5, Math.floor(options.maxReviews)))
+      : 5;
+  const forceRefresh = Boolean(options?.forceRefresh);
+  const maxAgeHours =
+    typeof options?.maxAgeHours === "number" && Number.isFinite(options.maxAgeHours)
+      ? Math.max(1, Math.min(24 * 365, Math.floor(options.maxAgeHours)))
+      : 24 * 30;
+
+  if (!forceRefresh) {
+    const cached = await loadGoogleReviewCache(storeId);
+    if (cached?.payload) {
+      const updatedAtMs = cached.updatedAt ? new Date(cached.updatedAt).getTime() : 0;
+      const ageMs = Date.now() - updatedAtMs;
+      const ttlMs = maxAgeHours * 60 * 60 * 1000;
+      if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= ttlMs) {
+        return cached.payload;
+      }
+    }
+  }
+
+  const sb = supabaseServer();
+  const { data: store, error } = await sb
+    .from("stores")
+    .select("id, name, address")
+    .eq("id", storeId)
+    .single();
+
+  if (error || !store) {
+    throw new Error("가게 정보를 찾지 못했습니다.");
+  }
+
+  const place = await findGooglePlaceForStore(apiKey, {
+    name: String((store as { name: unknown }).name ?? ""),
+    address: typeof (store as { address: unknown }).address === "string"
+      ? (store as { address: string }).address
+      : null,
+  });
+  if (!place) {
+    const noPlaceResult: GoogleReviewAiResult = {
+      found: false,
+      place: null,
+      summary: {
+        reviewCount: 0,
+        trustScore: 0,
+        adSuspectRatio: 0,
+        fallbackUsed: false,
+        providerCounts: {
+          gemini: 0,
+          openai: 0,
+          heuristic: 0,
+        },
+      },
+      reviews: [],
+    };
+    await saveGoogleReviewCache(storeId, noPlaceResult);
+    return noPlaceResult;
+  }
+
+  const details = await getGooglePlaceDetails(apiKey, place.name || place.id || "");
+  const newRows = (details.reviews ?? []).map((review) => ({
+    authorName: review.authorAttribution?.displayName || null,
+    rating:
+      typeof review.rating === "number" && Number.isFinite(review.rating) ? review.rating : 3,
+    content: review.text?.text || review.originalText?.text || "",
+    publishedAt: review.publishTime || null,
+  }));
+
+  const sourceReviews = newRows
+    .filter((row) => row.content.trim() !== "")
+    .slice(0, maxReviews);
+
+  const analyzed = await Promise.all(
+    sourceReviews.map(async (review) => {
+      const content = review.content;
+      const rating =
+        typeof review.rating === "number" && Number.isFinite(review.rating) ? review.rating : 3;
+      const analysis = await analyzeReviewWithProvider({
+        rating,
+        content,
+        isDisclosedAd: false,
+      });
+      const adAny = adAnyProbabilityFromAnalysis({
+        adRisk: analysis.analysis.adRisk,
+        undisclosedAdRisk: analysis.analysis.undisclosedAdRisk,
+      });
+
+      return {
+        authorName: review.authorName,
+        rating,
+        content,
+        publishedAt: review.publishedAt,
+        adAny: round4(adAny),
+        trustScore: round4(analysis.analysis.trustScore),
+        reasonSummary: analysis.analysis.reasonSummary,
+        provider: analysis.meta.provider,
+      };
+    })
+  );
+
+  const reviewCount = analyzed.length;
+  const trustAvg =
+    reviewCount > 0
+      ? round4(analyzed.reduce((sum, r) => sum + r.trustScore, 0) / reviewCount)
+      : 0;
+  const adAvg =
+    reviewCount > 0
+      ? round4(analyzed.reduce((sum, r) => sum + r.adAny, 0) / reviewCount)
+      : 0;
+  const providerCounts = {
+    gemini: analyzed.filter((r) => r.provider === "gemini").length,
+    openai: analyzed.filter((r) => r.provider === "openai").length,
+    heuristic: analyzed.filter((r) => r.provider === "heuristic").length,
+  };
+
+  const result: GoogleReviewAiResult = {
+    found: true,
+    place: {
+      id: details.id ?? place.id ?? null,
+      name:
+        details.displayName?.text ||
+        details.name ||
+        place.displayName?.text ||
+        place.name ||
+        null,
+      address: details.formattedAddress || place.formattedAddress || null,
+      externalRating:
+        typeof details.rating === "number" && Number.isFinite(details.rating)
+          ? details.rating
+          : null,
+      externalReviewCount:
+        typeof details.userRatingCount === "number" && Number.isFinite(details.userRatingCount)
+          ? Math.round(details.userRatingCount)
+          : null,
+    },
+    summary: {
+      reviewCount,
+      trustScore: trustAvg,
+      adSuspectRatio: adAvg,
+      fallbackUsed: providerCounts.heuristic > 0,
+      providerCounts,
+    },
+    reviews: analyzed.filter((review) => review.content.trim() !== ""),
+  };
+
+  await saveGoogleReviewCache(storeId, result);
+  return result;
+}
+
+type NaverSearchItem = {
+  title?: string;
+  description?: string;
+  bloggername?: string;
+  postdate?: string;
+  originallink?: string;
+  link?: string;
+};
+
+type NaverSignalResult = {
+  source: "naver_search";
+  query: string;
+  trustScore: number;
+  adSuspectRatio: number;
+  itemCount: number;
+  items: Array<{
+    title: string;
+    description: string;
+    author: string | null;
+    publishedAt: string | null;
+    link: string | null;
+  }>;
+};
+
+function stripHtml(input: string) {
+  return input.replace(/<[^>]+>/g, " ").replace(/&quot;/g, "\"").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+}
+
+function naverPostDateToIso(value: string | undefined) {
+  if (!value || !/^\d{8}$/.test(value)) return null;
+  const y = value.slice(0, 4);
+  const m = value.slice(4, 6);
+  const d = value.slice(6, 8);
+  return `${y}-${m}-${d}T00:00:00.000Z`;
+}
+
+async function fetchNaverSearchDocuments(query: string, display = 8) {
+  const clientId = process.env.NAVER_SEARCH_CLIENT_ID;
+  const clientSecret = process.env.NAVER_SEARCH_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error("NAVER_SEARCH_CLIENT_ID/NAVER_SEARCH_CLIENT_SECRET 환경변수가 필요합니다.");
+  }
+
+  const encoded = encodeURIComponent(query);
+  const endpoints = [
+    `https://openapi.naver.com/v1/search/blog.json?query=${encoded}&display=${display}&sort=sim`,
+    `https://openapi.naver.com/v1/search/news.json?query=${encoded}&display=${display}&sort=sim`,
+  ];
+
+  const items: NaverSearchItem[] = [];
+  for (const endpoint of endpoints) {
+    const response = await fetch(endpoint, {
+      headers: {
+        "X-Naver-Client-Id": clientId,
+        "X-Naver-Client-Secret": clientSecret,
+      },
+    });
+    if (!response.ok) continue;
+    const json = (await response.json()) as { items?: NaverSearchItem[] };
+    items.push(...(json.items ?? []));
+  }
+
+  return items;
+}
+
+async function loadNaverSignalCache(storeId: number) {
+  const sb = supabaseServer();
+  const { data, error } = await sb
+    .from("naver_signal_cache")
+    .select("payload, updated_at")
+    .eq("store_id", storeId)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    if (isMissingTableError(error)) return null;
+    throw new Error(error.message);
+  }
+
+  const row = Array.isArray(data) ? data[0] : null;
+  const payload = (row as { payload?: unknown } | null)?.payload;
+  if (!payload || typeof payload !== "object") return null;
+
+  const updatedAt =
+    typeof (row as { updated_at?: unknown } | null)?.updated_at === "string"
+      ? ((row as { updated_at: string }).updated_at as string)
+      : null;
+
+  return { payload: payload as NaverSignalResult, updatedAt };
+}
+
+async function saveNaverSignalCache(storeId: number, payload: NaverSignalResult) {
+  const sb = supabaseServer();
+  const { error } = await sb.from("naver_signal_cache").upsert(
+    {
+      store_id: storeId,
+      payload,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "store_id" }
+  );
+  if (error && !isMissingTableError(error)) {
+    throw new Error(error.message);
+  }
+}
+
+export async function getNaverSignalsForStore(
+  storeId: number,
+  options?: { forceRefresh?: boolean; maxAgeHours?: number; display?: number }
+) {
+  const forceRefresh = Boolean(options?.forceRefresh);
+  const maxAgeHours =
+    typeof options?.maxAgeHours === "number" && Number.isFinite(options.maxAgeHours)
+      ? Math.max(1, Math.min(24 * 365, Math.floor(options.maxAgeHours)))
+      : 24 * 30;
+  const display =
+    typeof options?.display === "number" && Number.isFinite(options.display)
+      ? Math.max(3, Math.min(15, Math.floor(options.display)))
+      : 8;
+
+  if (!forceRefresh) {
+    const cached = await loadNaverSignalCache(storeId);
+    if (cached?.payload) {
+      const updatedAtMs = cached.updatedAt ? new Date(cached.updatedAt).getTime() : 0;
+      const ageMs = Date.now() - updatedAtMs;
+      const ttlMs = maxAgeHours * 60 * 60 * 1000;
+      if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs <= ttlMs) {
+        return cached.payload;
+      }
+    }
+  }
+
+  const sb = supabaseServer();
+  const { data: store, error } = await sb
+    .from("stores")
+    .select("id, name, address")
+    .eq("id", storeId)
+    .single();
+  if (error || !store) throw new Error("가게 정보를 찾지 못했습니다.");
+
+  const name = String((store as { name: unknown }).name ?? "");
+  const address =
+    typeof (store as { address: unknown }).address === "string"
+      ? (store as { address: string }).address
+      : "";
+  const query = `${name} ${address}`.trim();
+
+  const docs = await fetchNaverSearchDocuments(query, display);
+  const normalized = docs
+    .map((item) => ({
+      title: stripHtml(item.title ?? ""),
+      description: stripHtml(item.description ?? ""),
+      author: item.bloggername ?? null,
+      publishedAt: naverPostDateToIso(item.postdate),
+      link: item.originallink || item.link || null,
+    }))
+    .filter((item) => item.title || item.description)
+    .slice(0, 12);
+
+  const analyzed = await Promise.all(
+    normalized.map(async (doc) => {
+      const content = `${doc.title} ${doc.description}`.trim();
+      const ai = await analyzeReviewWithProvider({
+        rating: 3,
+        content,
+        isDisclosedAd: false,
+      });
+      const adAny = adAnyProbabilityFromAnalysis({
+        adRisk: ai.analysis.adRisk,
+        undisclosedAdRisk: ai.analysis.undisclosedAdRisk,
+      });
+      return {
+        trustScore: ai.analysis.trustScore,
+        adAny,
+      };
+    })
+  );
+
+  const itemCount = analyzed.length;
+  const trustScore =
+    itemCount > 0
+      ? round4(analyzed.reduce((sum, row) => sum + row.trustScore, 0) / itemCount)
+      : 0;
+  const adSuspectRatio =
+    itemCount > 0 ? round4(analyzed.reduce((sum, row) => sum + row.adAny, 0) / itemCount) : 0;
+
+  const result: NaverSignalResult = {
+    source: "naver_search",
+    query,
+    trustScore,
+    adSuspectRatio,
+    itemCount,
+    items: normalized,
+  };
+
+  await saveNaverSignalCache(storeId, result);
+  return result;
+}

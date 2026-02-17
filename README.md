@@ -20,7 +20,18 @@ OPENAI_API_KEY=... # 선택, 없으면 휴리스틱 엔진 사용
 OPENAI_REVIEW_MODEL=gpt-5-mini # 선택
 NEXT_PUBLIC_KAKAO_MAP_APP_KEY=... # 카카오맵 JavaScript 키
 KAKAO_REST_API_KEY=... # 카카오 로컬 REST API 키(장소 자동수집)
+
+# AdSense 설정 (선택)
+NEXT_PUBLIC_ADSENSE_CLIENT=... # 예: ca-pub-1234567890123456
+NEXT_PUBLIC_ADSENSE_SLOT=...   # 예: 1234567890
+NEXT_PUBLIC_ADSENSE_FORMAT=auto # 기본값: auto
 ```
+
+**AdSense 환경 변수 설명:**
+- `NEXT_PUBLIC_ADSENSE_CLIENT`: AdSense 클라이언트 ID (ca-pub-으로 시작)
+- `NEXT_PUBLIC_ADSENSE_SLOT`: AdSense 광고 슬롯 ID
+- `NEXT_PUBLIC_ADSENSE_FORMAT`: 광고 형식 (기본값: auto)
+- 슬롯/포맷 값이 없으면 플레이스홀더만 표시되고, 값이 있으면 실제 광고가 표시됩니다.
 
 ## 2) Supabase 스키마 적용
 
