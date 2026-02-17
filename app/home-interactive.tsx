@@ -171,17 +171,17 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const HEADER_AND_SEARCH_HEIGHT = 280; // Height of header + search form + padding
 
   return (
-    <div style={{ minHeight: "100vh", background: "#faf7f3" }}>
+    <div style={{ minHeight: "100vh", background: "#f5f2ed" }}>
       <header
         style={{
-          background: "#c4a882",
-          color: "#4a3f35",
+          background: "#28502E",
+          color: "#ffffff",
           padding: "24px 20px",
           textAlign: "center",
         }}
       >
-        <h1 style={{ fontSize: 36, fontWeight: 900, margin: 0 }}>찐리뷰</h1>
-        <p style={{ marginTop: 8, fontSize: 16, opacity: 0.9 }}>
+        <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>찐리뷰</h1>
+        <p style={{ marginTop: 8, fontSize: 16, opacity: 0.9, color: "#8C7051" }}>
           AI가 분석하는 진짜 리뷰, 광고 의심 리뷰를 걸러내는 신뢰할 수 있는 리뷰 플랫폼
         </p>
       </header>
@@ -197,8 +197,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         <aside
           style={{
             minWidth: 0,
-            background: "#ffffff",
-            borderRight: isMobile ? "none" : "1px solid #d4c7ba",
+            background: "#faf8f5",
+            borderRight: isMobile ? "none" : "1px solid #c9b99e",
             display: isMobile && showDetailPane ? "none" : "block",
           }}
         >
@@ -212,7 +212,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 style={{
                   width: "100%",
                   padding: "12px 16px",
-                  border: "1px solid #d4c7ba",
+                  border: "1px solid #c9b99e",
                   borderRadius: 8,
                   fontSize: 15,
                   outline: "none",
@@ -225,8 +225,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                   width: "100%",
                   marginTop: 10,
                   padding: "12px 16px",
-                  background: isSearching ? "#ccc" : "#c4a882",
-                  color: "#4a3f35",
+                  background: isSearching ? "#ccc" : "#28502E",
+                  color: "#ffffff",
                   border: "none",
                   borderRadius: 8,
                   fontSize: 15,
@@ -236,12 +236,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 }}
                 onMouseEnter={(e) => {
                   if (!isSearching) {
-                    e.currentTarget.style.background = "#d4b892";
+                    e.currentTarget.style.background = "#47682C";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!isSearching) {
-                    e.currentTarget.style.background = "#c4a882";
+                    e.currentTarget.style.background = "#28502E";
                   }
                 }}
               >
@@ -249,7 +249,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               </button>
             </form>
 
-            <div style={{ fontSize: 14, color: "#7a6f65", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, color: "#8C7051", marginBottom: 12 }}>
               총 {stores.length}개 가게
             </div>
 
@@ -274,27 +274,27 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                     style={{
                       padding: 14,
                       marginBottom: 10,
-                      border: isSelected ? "2px solid #c4a882" : "1px solid #d4c7ba",
+                      border: isSelected ? "2px solid #28502E" : "1px solid rgba(140, 112, 81, 0.4)",
                       borderRadius: 12,
                       cursor: "pointer",
-                      background: isSelected ? "#fff3cd" : isHovered ? "#ede5d8" : "#fff",
+                      background: isSelected ? "rgba(40, 80, 46, 0.12)" : isHovered ? "#eee9e0" : "#faf8f5",
                       transition: "all 0.2s ease",
-                      boxShadow: isHovered ? "0 2px 8px rgba(74, 63, 53, 0.1)" : "none",
+                      boxShadow: isHovered ? "0 2px 8px rgba(140, 112, 81, 0.2)" : "none",
                     }}
                   >
-                    <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4, color: "#4a3f35" }}>
+                    <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4, color: "#28502E" }}>
                       {store.name}
                     </div>
-                    <div style={{ fontSize: 13, color: "#7a6f65", marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 8 }}>
                       {store.address ?? "주소 정보 없음"}
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
-                      <span style={{ color: "#c4a882" }}>
+                      <span style={{ color: "#2d2d2d" }}>
                         ⭐ {store.summary.weightedRating?.toFixed(1) ?? "-"}
                       </span>
-                      <span style={{ color: "#4a3f35" }}>리뷰 {store.summary.reviewCount}</span>
-                      <span style={{ color: "#4a3f35" }}>{ratingTrust.emoji} {ratingTrust.totalScore}점</span>
-                      <span style={{ color: adPct >= 30 ? "#e53e3e" : "#7a6f65" }}>
+                      <span style={{ color: "#2d2d2d" }}>리뷰 {store.summary.reviewCount}</span>
+                      <span style={{ color: "#28502E" }}>{ratingTrust.emoji} {ratingTrust.totalScore}점</span>
+                      <span style={{ color: adPct >= 30 ? "#e53e3e" : "#8C7051" }}>
                         광고의심 {adPct}%
                       </span>
                     </div>
@@ -312,7 +312,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
             minWidth: 0,
             maxWidth: "100%",
             overflow: "auto",
-            background: "#ffffff",
+            background: "#faf8f5",
           }}
         >
           {isMobile && (
@@ -321,12 +321,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               style={{
                 marginBottom: 16,
                 padding: "8px 16px",
-                background: "#f5f0e8",
-                border: "1px solid #d4c7ba",
+                background: "#eee9e0",
+                border: "1px solid #c9b99e",
                 borderRadius: 8,
                 cursor: "pointer",
                 fontSize: 14,
-                color: "#4a3f35",
+                color: "#28502E",
               }}
             >
               ← 목록으로
@@ -334,31 +334,31 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
           )}
 
           {isLoadingDetail && (
-            <div style={{ textAlign: "center", padding: 40, color: "#7a6f65" }}>
+            <div style={{ textAlign: "center", padding: 40, color: "#8C7051" }}>
               로딩 중...
             </div>
           )}
 
           {!isLoadingDetail && storeDetail && (
             <div>
-              <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8, color: "#4a3f35" }}>
+              <h2 style={{ fontSize: 28, fontWeight: 800, marginBottom: 8, color: "#28502E" }}>
                 {storeDetail.store.name}
               </h2>
-              <div style={{ color: "#7a6f65", marginBottom: 20 }}>
+              <div style={{ color: "#8C7051", marginBottom: 20 }}>
                 {storeDetail.store.address ?? "-"}
               </div>
 
               <div
                 style={{
-                  border: "1px solid #d4c7ba",
+                  border: "1px solid rgba(140, 112, 81, 0.4)",
                   borderRadius: 14,
                   padding: 16,
-                  background: "#ffffff",
+                  background: "#faf8f5",
                   marginBottom: 24,
                 }}
               >
-                <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 10, color: "#4a3f35" }}>점수 요약</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 16, fontSize: 14, color: "#4a3f35" }}>
+                <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 10, color: "#28502E" }}>점수 요약</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 16, fontSize: 14, color: "#2d2d2d" }}>
                   <span>
                     신뢰가중 평점: {storeDetail.summary.weightedRating?.toFixed(1) ?? "-"}
                   </span>
@@ -375,17 +375,17 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 </div>
                 
                 {storeDetail.insight?.ratingTrustScore && (
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #d4c7ba" }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: "#4a3f35", marginBottom: 6 }}>
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(140, 112, 81, 0.4)" }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#28502E", marginBottom: 6 }}>
                       {storeDetail.insight.ratingTrustScore.emoji} 별점 신뢰도 {storeDetail.insight.ratingTrustScore.totalScore}점 ({storeDetail.insight.ratingTrustScore.label})
                     </div>
-                    <div style={{ fontSize: 13, color: "#7a6f65" }}>
+                    <div style={{ fontSize: 13, color: "#8C7051" }}>
                       표본 {storeDetail.insight.ratingTrustScore.breakdown.sampleSize}/65 · 자연성 {storeDetail.insight.ratingTrustScore.breakdown.naturalness}/35
                     </div>
                   </div>
                 )}
                 
-                <div style={{ marginTop: 10, fontSize: 13, color: "#7a6f65" }}>
+                <div style={{ marginTop: 10, fontSize: 13, color: "#8C7051" }}>
                   AI 분석 기반 자동추정이며 법적 확정 판단이 아닙니다.
                   {storeDetail.summary.lastAnalyzedAt
                     ? ` 마지막 분석: ${new Date(storeDetail.summary.lastAnalyzedAt).toLocaleString("ko-KR")}`
@@ -395,10 +395,10 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
               {storeDetail.insight?.comparedStores && storeDetail.insight.comparedStores.length > 0 && (
                 <div style={{ marginBottom: 24 }}>
-                  <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#4a3f35" }}>
+                  <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
                     주변 1km 비교 가게 ({storeDetail.insight.comparedStores.length})
                   </h3>
-                  <div style={{ border: "1px solid #d4c7ba", borderRadius: 12, background: "#ffffff", overflow: "hidden" }}>
+                  <div style={{ border: "1px solid rgba(140, 112, 81, 0.4)", borderRadius: 12, background: "#faf8f5", overflow: "hidden" }}>
                     {storeDetail.insight.comparedStores.map((comparedStore) => {
                       const isHovered = hoveredCompareId === comparedStore.id;
                       return (
@@ -413,25 +413,26 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                           onMouseLeave={() => setHoveredCompareId(null)}
                           style={{
                             padding: 12,
-                            borderBottom: "1px solid #d4c7ba",
-                            background: comparedStore.isSelf ? "#fff3cd" : isHovered ? "#f5f0e8" : "#ffffff",
+                            borderBottom: "1px solid rgba(140, 112, 81, 0.4)",
+                            background: comparedStore.isSelf ? "rgba(40, 80, 46, 0.12)" : isHovered ? "rgba(71, 104, 44, 0.1)" : "#faf8f5",
                             cursor: comparedStore.isSelf ? "default" : "pointer",
                             transition: "all 0.2s ease",
+                            border: comparedStore.isSelf ? "2px solid #28502E" : "none",
                           }}
                         >
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                             <div style={{ flex: 1, minWidth: 200 }}>
-                              <div style={{ fontWeight: 700, fontSize: 14, color: "#4a3f35", marginBottom: 2 }}>
+                              <div style={{ fontWeight: 700, fontSize: 14, color: "#28502E", marginBottom: 2 }}>
                                 {comparedStore.rank}위. {comparedStore.name}
-                                {comparedStore.isSelf && <span style={{ marginLeft: 6, fontSize: 12, color: "#7a6f65" }}>(현재 가게)</span>}
+                                {comparedStore.isSelf && <span style={{ marginLeft: 6, fontSize: 12, color: "#8C7051" }}>(현재 가게)</span>}
                               </div>
-                              <div style={{ fontSize: 12, color: "#7a6f65" }}>
+                              <div style={{ fontSize: 12, color: "#8C7051" }}>
                                 {comparedStore.address ?? "주소 정보 없음"}
                               </div>
                             </div>
-                            <div style={{ fontSize: 13, color: "#4a3f35", textAlign: "right" }}>
+                            <div style={{ fontSize: 13, color: "#2d2d2d", textAlign: "right" }}>
                               <div>⭐ {comparedStore.rating.toFixed(1)}</div>
-                              <div style={{ fontSize: 11, color: "#7a6f65" }}>리뷰 {comparedStore.reviewCount}</div>
+                              <div style={{ fontSize: 11, color: "#8C7051" }}>리뷰 {comparedStore.reviewCount}</div>
                             </div>
                           </div>
                         </div>
@@ -442,7 +443,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               )}
 
               <div>
-                <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#4a3f35" }}>
+                <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
                   전체 리뷰 ({storeDetail.reviews.length})
                 </h3>
 
@@ -459,10 +460,10 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                       <div
                         key={`${review.source}-${review.id}`}
                         style={{
-                          border: "1px solid #d4c7ba",
+                          border: "1px solid rgba(140, 112, 81, 0.3)",
                           borderRadius: 12,
                           padding: 14,
-                          background: (adAny ?? 0) >= 0.6 ? "#fff8f8" : "#ffffff",
+                          background: (adAny ?? 0) >= 0.6 ? "#fff0f0" : "#faf8f5",
                         }}
                       >
                         <div
@@ -472,7 +473,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                             gap: 12,
                             fontSize: 14,
                             marginBottom: 8,
-                            color: "#4a3f35",
+                            color: "#2d2d2d",
                           }}
                         >
                           <strong>{review.rating.toFixed(1)}점</strong>
@@ -487,13 +488,13 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                               : "분석 대기"}
                           </span>
                         </div>
-                        <p style={{ lineHeight: 1.5, margin: "8px 0", color: "#4a3f35" }}>{review.content}</p>
+                        <p style={{ lineHeight: 1.5, margin: "8px 0", color: "#2d2d2d" }}>{review.content}</p>
                         {review.latestAnalysis && (
-                          <div style={{ fontSize: 12, color: "#7a6f65", marginBottom: 6 }}>
+                          <div style={{ fontSize: 12, color: "#8C7051", marginBottom: 6 }}>
                             근거: {review.latestAnalysis.reasonSummary}
                           </div>
                         )}
-                        <div style={{ fontSize: 12, color: "#7a6f65" }}>
+                        <div style={{ fontSize: 12, color: "#8C7051" }}>
                           {review.authorName ?? "익명"} ·{" "}
                           {new Date(review.createdAt).toLocaleString("ko-KR")}
                         </div>
@@ -506,7 +507,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
           )}
 
           {!isLoadingDetail && !storeDetail && showDetailPane && (
-            <div style={{ textAlign: "center", padding: 40, color: "#7a6f65" }}>
+            <div style={{ textAlign: "center", padding: 40, color: "#8C7051" }}>
               가게 정보를 불러오지 못했습니다.
             </div>
           )}

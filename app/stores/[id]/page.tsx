@@ -45,12 +45,12 @@ function AdPlaceholder({ label }: { label: string }) {
       data-ad-client={ADSENSE_CLIENT}
       data-ad-slot={ADSENSE_SLOT_PLACEHOLDER}
       style={{
-        border: "1px dashed #d4c7ba",
+        border: "1px dashed #c9b99e",
         borderRadius: 12,
         padding: "12px 14px",
         fontSize: 12,
-        color: "#7a6f65",
-        background: "#faf7f3",
+        color: "#8C7051",
+        background: "#faf8f5",
         textAlign: "center",
       }}
     >
@@ -72,33 +72,46 @@ export default async function StorePage({ params }: Props) {
 
   return (
     <main style={{ padding: 24, maxWidth: 980, margin: "0 auto" }}>
-      <Link href="/" style={{ color: "#666", textDecoration: "none" }}>
+      <Link 
+        href="/" 
+        style={{ 
+          color: "#8C7051", 
+          textDecoration: "none",
+          transition: "color 0.2s ease"
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = "#47682C";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = "#8C7051";
+        }}
+      >
         ← 목록으로
       </Link>
 
-      <h1 style={{ marginTop: 12, fontSize: 30, fontWeight: 800 }}>{detail.store.name}</h1>
-      <div style={{ marginTop: 6, color: "#666" }}>{detail.store.address ?? "-"}</div>
+      <h1 style={{ marginTop: 12, fontSize: 30, fontWeight: 800, color: "#28502E" }}>{detail.store.name}</h1>
+      <div style={{ marginTop: 6, color: "#8C7051" }}>{detail.store.address ?? "-"}</div>
 
       <section
         style={{
           marginTop: 20,
-          border: "1px solid #ddd",
+          border: "1px solid #c9b99e",
           borderRadius: 14,
           padding: 16,
           display: "grid",
           gap: 10,
-          background: "linear-gradient(180deg, #ffffff 0%, #f8fcff 100%)",
+          background: "linear-gradient(180deg, #faf8f5 0%, #f0ede6 100%)",
         }}
       >
-        <div style={{ fontWeight: 800, fontSize: 16 }}>점수 요약</div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
+        <div style={{ fontWeight: 800, fontSize: 16, color: "#28502E" }}>점수 요약</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 16, color: "#2d2d2d" }}>
           <span>신뢰가중 평점: {detail.summary.weightedRating?.toFixed(1) ?? "-"}</span>
           <span>리뷰 수: {detail.summary.reviewCount}</span>
           <span>광고 의심 비율: {adPct}%</span>
           <span>리뷰 신뢰 점수: {trustPoint}점</span>
           <span>긍정 비율: {Math.round(detail.summary.positiveRatio * 100)}%</span>
         </div>
-        <div style={{ marginTop: 6, fontSize: 13, color: "#666" }}>
+        <div style={{ marginTop: 6, fontSize: 13, color: "#8C7051" }}>
           AI 분석 기반 자동추정이며 법적 확정 판단이 아닙니다.
           {detail.summary.lastAnalyzedAt
             ? ` 마지막 분석: ${new Date(detail.summary.lastAnalyzedAt).toLocaleString("ko-KR")}`
@@ -108,12 +121,12 @@ export default async function StorePage({ params }: Props) {
       </section>
 
       <section style={{ marginTop: 24 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800 }}>리뷰 작성</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 800, color: "#28502E" }}>리뷰 작성</h2>
         <ReviewForm storeId={storeId} />
       </section>
 
       <section style={{ marginTop: 28 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800 }}>전체 리뷰 ({detail.reviews.length})</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 800, color: "#28502E" }}>전체 리뷰 ({detail.reviews.length})</h2>
         <div style={{ marginTop: 12 }}>
           <AdPlaceholder label="리뷰 리스트 상단" />
         </div>
@@ -130,13 +143,13 @@ export default async function StorePage({ params }: Props) {
               <li
                 key={`${review.source}-${review.id}-${review.createdAt}`}
                 style={{
-                  border: "1px solid #ddd",
+                  border: "1px solid rgba(140, 112, 81, 0.3)",
                   borderRadius: 12,
                   padding: 14,
-                  background: (adAny ?? 0) >= 0.6 ? "#fff8f8" : "#fff",
+                  background: (adAny ?? 0) >= 0.6 ? "#fff0f0" : "#faf8f5",
                 }}
               >
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 14 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 14, color: "#2d2d2d" }}>
                   <strong>{review.rating.toFixed(1)}점</strong>
                   <span>{review.source === "external" ? "외부" : "앱"}</span>
                   <span>
@@ -149,13 +162,13 @@ export default async function StorePage({ params }: Props) {
                       : "분석 대기"}
                   </span>
                 </div>
-                <p style={{ marginTop: 8, lineHeight: 1.5 }}>{review.content}</p>
+                <p style={{ marginTop: 8, lineHeight: 1.5, color: "#2d2d2d" }}>{review.content}</p>
                 {review.latestAnalysis ? (
-                  <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#8C7051" }}>
                     근거: {review.latestAnalysis.reasonSummary}
                   </div>
                 ) : null}
-                <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
+                <div style={{ marginTop: 6, fontSize: 12, color: "#8C7051" }}>
                   {review.authorName ?? "익명"} · {new Date(review.createdAt).toLocaleString("ko-KR")}
                 </div>
               </li>
