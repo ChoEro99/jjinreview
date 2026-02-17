@@ -1,6 +1,12 @@
 import React from 'react'; // Imports and other components...
 
-const HomeInteractive = ({ isMobile, showDetailPane }) => {
+interface HomeInteractiveProps {
+  stores: unknown[];
+  isMobile?: boolean;
+  showDetailPane?: boolean;
+}
+
+const HomeInteractive = ({ isMobile, showDetailPane }: HomeInteractiveProps) => {
   // Other states and functions...
 
   return (

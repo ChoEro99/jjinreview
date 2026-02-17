@@ -7,6 +7,35 @@ type Props = {
   params: Promise<{ id: string }>;
 };
 
+interface StoreDetail {
+  store: {
+    name: string;
+    address: string | null;
+  };
+  summary: {
+    adSuspectRatio: number;
+    trustScore: number;
+    weightedRating: number | null;
+    reviewCount: number;
+    positiveRatio: number;
+    lastAnalyzedAt: string | null;
+  };
+  reviews: Array<{
+    source: string;
+    id: string;
+    createdAt: string;
+    rating: number;
+    content: string;
+    authorName: string | null;
+    latestAnalysis: {
+      adRisk: number;
+      undisclosedAdRisk: number;
+      trustScore: number;
+      reasonSummary: string;
+    } | null;
+  }>;
+}
+
 const ADSENSE_CLIENT = "ca-pub-6051453612452994";
 const ADSENSE_SLOT_PLACEHOLDER = "REPLACE_WITH_AD_SLOT";
 
@@ -35,7 +64,7 @@ export default async function StorePage({ params }: Props) {
   const storeId = Number(resolved.id);
   if (!storeId) notFound();
 
-  const detail = await getStoreDetail(storeId).catch(() => null);
+  const detail = await getStoreDetail(storeId).catch(() => null) as StoreDetail | null;
   if (!detail) notFound();
 
   const adPct = Math.round(detail.summary.adSuspectRatio * 100);
