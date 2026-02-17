@@ -3,6 +3,15 @@
 import React, { useState, useEffect } from "react";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 
+// Rating trust score label mapping
+const RATING_TRUST_LABEL_MAPPING: Record<string, string> = {
+  "매우 신뢰": "안정적 평점",
+  "신뢰 가능": "안정적 평점",
+  "보통": "보통 평점",
+  "주의 필요": "주의 필요",
+  "신뢰 어려움": "신뢰 어려움",
+};
+
 interface StoreBase {
   id: number;
   name: string;
@@ -364,14 +373,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
                 {/* 평점신뢰도 */}
                 {storeDetail.insight?.ratingTrustScore && (() => {
-                  const labelMapping: Record<string, string> = {
-                    "매우 신뢰": "안정적 평점",
-                    "신뢰 가능": "안정적 평점",
-                    "보통": "보통 평점",
-                    "주의 필요": "주의 필요",
-                    "신뢰 어려움": "신뢰 어려움",
-                  };
-                  const mappedLabel = labelMapping[storeDetail.insight.ratingTrustScore.label] || storeDetail.insight.ratingTrustScore.label;
+                  const mappedLabel = RATING_TRUST_LABEL_MAPPING[storeDetail.insight.ratingTrustScore.label] || storeDetail.insight.ratingTrustScore.label;
                   
                   return (
                     <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E", marginBottom: 12 }}>
