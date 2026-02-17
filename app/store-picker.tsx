@@ -1,4 +1,4 @@
-"use client";
+use client;
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -61,7 +61,7 @@ type Props = {
     latitude: number;
     longitude: number;
     category: "food" | "cafe" | "spot";
-  }>;
+  }>; 
   selectedPlace?: {
     id: string;
     name: string;
@@ -87,7 +87,7 @@ type Props = {
       content: string;
       authorName: string | null;
       createdAt: string;
-    }>;
+    }>; 
   } | null;
   detailLoading?: boolean;
 };
@@ -162,6 +162,7 @@ export default function StorePicker({
   const [addingId, setAddingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<"all" | "food" | "cafe" | "spot">("all");
 
   const keySet = useMemo(() => {
     return new Set(
@@ -176,6 +177,11 @@ export default function StorePicker({
       spot: nearbyPlaces.filter((place) => place.category === "spot"),
     };
   }, [nearbyPlaces]);
+
+  const filteredNearby = useMemo(() => {
+    if (activeCategory === "all") return nearbyPlaces;
+    return nearbyByCategory[activeCategory];
+  }, [activeCategory, nearbyPlaces, nearbyByCategory]);
 
   async function onSearch(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -451,19 +457,34 @@ export default function StorePicker({
 
       <section style={{ marginTop: 12 }}>
         <div style={{ fontWeight: 800, fontSize: 14 }}>지금 지도에 보이는 가게</div>
-        <div style={{ marginTop: 6, display: "flex", gap: 6, fontSize: 12 }}>
-          <span style={{ padding: "3px 7px", borderRadius: 999, background: "#fff1e8", color: "#b45309" }}>
-            음식점 {nearbyByCategory.food.length}
-          </span>
-          <span style={{ padding: "3px 7px", borderRadius: 999, background: "#fff7ed", color: "#c2410c" }}>
-            카페 {nearbyByCategory.cafe.length}
-          </span>
-          <span style={{ padding: "3px 7px", borderRadius: 999, background: "#ecfeff", color: "#0e7490" }}>
-            놀러갈곳 {nearbyByCategory.spot.length}
-          </span>
+        <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap", fontSize: 12 }}>
+          {([
+            { key: "all", label: `전체 ${nearbyPlaces.length}개`, color: "#334155", bg: "#e2e8f0" },
+            { key: "food", label: `음식점 ${nearbyByCategory.food.length}`, color: "#b45309", bg: "#fff1e8" },
+            { key: "cafe", label: `카페 ${nearbyByCategory.cafe.length}`, color: "#c2410c", bg: "#fff7ed" },
+            { key: "spot", label: `놀러갈곳 ${nearbyByCategory.spot.length}`, color: "#0e7490", bg: "#ecfeff" },
+          ] as const).map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveCategory(tab.key)}
+              style={{
+                border: "none",
+                borderRadius: 999,
+                padding: "4px 10px",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+                background: activeCategory === tab.key ? tab.bg : "#f1f5f9",
+                color: activeCategory === tab.key ? tab.color : "#475569",
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
         <ul style={{ marginTop: 8, listStyle: "none", padding: 0, display: "grid", gap: 7 }}>
-          {nearbyPlaces.slice(0, 20).map((place) => (
+          {filteredNearby.slice(0, 20).map((place) => (
             <li
               key={`${place.category}-${place.id}`}
               style={{
