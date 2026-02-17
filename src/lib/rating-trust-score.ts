@@ -1,5 +1,5 @@
 /**
- * 별점 신뢰도 점수 계산 모듈
+ * 평점신뢰도 점수 계산 모듈
  * 
  * 총점 = 표본 크기 점수 (최대 65점) + 분포 자연성 점수 (최대 35점)
  */
@@ -58,7 +58,7 @@ function getLabelAndEmoji(totalScore: number): { label: string; emoji: string } 
 }
 
 /**
- * 별점 신뢰도 점수 계산
+ * 평점신뢰도 점수 계산
  * 
  * @param rating - 외부 평점 (null 가능)
  * @param reviewCount - 리뷰 수
