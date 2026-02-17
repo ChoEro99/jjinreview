@@ -254,22 +254,23 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     }
   };
 
-  const handleComparedStoreClick = async (comparedStoreId: number | string, storeName: string, storeAddress: string | null) => {
+  const handleComparedStoreClick = async (storeId: number | string, storeName: string, storeAddress: string | null) => {
     // If it's a number, it's already a registered store ID
-    if (typeof comparedStoreId === "number") {
-      handleStoreClick(comparedStoreId);
+    if (typeof storeId === "number") {
+      handleStoreClick(storeId);
       return;
     }
 
     // If it's a string, check if it's in the format "store-{id}"
-    if (typeof comparedStoreId === "string" && comparedStoreId.startsWith("store-")) {
-      const numericId = parseInt(comparedStoreId.substring(6), 10);
+    const STORE_PREFIX = "store-";
+    if (typeof storeId === "string" && storeId.startsWith(STORE_PREFIX)) {
+      const numericId = parseInt(storeId.substring(STORE_PREFIX.length), 10);
       if (!isNaN(numericId)) {
         handleStoreClick(numericId);
         return;
       } else {
         // Malformed store- prefix, treat as Google place ID
-        console.warn("Malformed store ID format:", comparedStoreId, "- treating as Google place ID");
+        console.warn("Malformed store ID format:", storeId, "- treating as Google place ID");
       }
     }
 
