@@ -95,6 +95,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
   const [storeDetail, setStoreDetail] = useState<StoreDetail | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
   const [hoveredCompareId, setHoveredCompareId] = useState<number | null>(null);
@@ -197,6 +198,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     setSelectedStoreId(storeId);
     selectedStoreIdRef.current = storeId; // Update ref for async checks
     setFailedPhotos(new Set()); // Reset failed photos when switching stores
+    setFetchError(false); // Reset error state
     
     const cached = storeDetailCache.current.get(storeId);
     if (cached) {
@@ -219,29 +221,33 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
           // Only update if this store is still selected
           if (selectedStoreIdRef.current === storeId) {
             setStoreDetail(data);
+            setFetchError(false);
           }
         } else {
           // API returned ok: false - keep cached data if available
           console.error("API returned error for store", storeId, ":", data?.error ?? "Unknown error");
           if (!cached) {
-            // No cache available - set storeDetail to null to show error message
+            // No cache available - set error state
             setStoreDetail(null);
+            setFetchError(true);
           }
         }
       } else {
         // HTTP error (4xx, 5xx) - keep cached data if available
         console.error("HTTP error for store", storeId, ":", response.status, response.statusText);
         if (!cached) {
-          // No cache available - set storeDetail to null to show error message
+          // No cache available - set error state
           setStoreDetail(null);
+          setFetchError(true);
         }
       }
     } catch (error) {
       // Network or other error - keep cached data if available
       console.error("Failed to load store detail:", error);
       if (!cached) {
-        // No cache available - set storeDetail to null to show error message
+        // No cache available - set error state
         setStoreDetail(null);
+        setFetchError(true);
       }
     } finally {
       setIsLoadingDetail(false);
@@ -905,7 +911,30 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
           {!isLoadingDetail && !storeDetail && showDetailPane && (
             <div style={{ textAlign: "center", padding: 40, color: "#8C7051" }}>
-              가게 정보를 불러오지 못했습니다.
+              {fetchError ? (
+                <>
+                  <div style={{ marginBottom: 16 }}>
+                    가게 정보를 불러오는 데 실패했습니다. 다시 시도해주세요.
+                  </div>
+                  <button
+                    onClick={() => selectedStoreId !== null && handleStoreClick(selectedStoreId)}
+                    style={{
+                      background: "#28502E",
+                      color: "#ffffff",
+                      border: "none",
+                      padding: "12px 24px",
+                      borderRadius: 8,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    다시 시도
+                  </button>
+                </>
+              ) : (
+                "가게 정보를 불러오지 못했습니다."
+              )}
             </div>
           )}
         </section>
