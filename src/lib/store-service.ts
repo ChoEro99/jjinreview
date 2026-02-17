@@ -5,6 +5,7 @@ import {
   type ReviewSource,
 } from "@/src/lib/review-engine";
 import { supabaseServer } from "@/src/lib/supabaseServer";
+import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 
 export type StoreBase = {
   id: number;
@@ -868,6 +869,10 @@ export async function getStoreDetail(id: number) {
     normalizedStore.externalRating,
     normalizedStore.externalReviewCount ?? 0
   );
+  const ratingTrustScore = computeRatingTrustScore(
+    normalizedStore.externalRating,
+    normalizedStore.externalReviewCount ?? 0
+  );
 
   return {
     store: normalizedStore,
@@ -882,6 +887,7 @@ export async function getStoreDetail(id: number) {
       reviewCount: normalizedStore.externalReviewCount ?? 0,
       rating: normalizedStore.externalRating,
       radiusKm: 1,
+      ratingTrustScore,
     },
   };
 }
@@ -1578,12 +1584,13 @@ function reliabilityLabelBySnapshot(rating: number | null, reviewCount: number) 
 }
 
 async function refreshStoreExternalSnapshotIfStale(storeId: number) {
+  const STORE_REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일
 
   const sb = supabaseServer();
   const currentFull = await sb
     .from("stores")
     .select(
-      "id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count"
+      "id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count, updated_at"
     )
     .eq("id", storeId)
     .single();
@@ -1597,7 +1604,7 @@ async function refreshStoreExternalSnapshotIfStale(storeId: number) {
     geoColumnMissing = true;
     const currentMinimal = await sb
       .from("stores")
-      .select("id, name, address, external_rating, external_review_count")
+      .select("id, name, address, external_rating, external_review_count, updated_at")
       .eq("id", storeId)
       .single();
     if (currentMinimal.error || !currentMinimal.data) {
@@ -1615,7 +1622,13 @@ async function refreshStoreExternalSnapshotIfStale(storeId: number) {
     Number.isFinite(row.latitude) &&
     typeof row.longitude === "number" &&
     Number.isFinite(row.longitude);
-  if (hasExternal && (hasGeo || geoColumnMissing)) {
+  
+  // Check if data is stale (older than 7 days)
+  const updatedAt = typeof row.updated_at === "string" ? new Date(row.updated_at).getTime() : 0;
+  const age = Date.now() - updatedAt;
+  const isStale = !Number.isFinite(age) || age < 0 || age > STORE_REFRESH_TTL_MS;
+  
+  if (hasExternal && (hasGeo || geoColumnMissing) && !isStale) {
     return normalizeStoreRow(row);
   }
 
@@ -1656,12 +1669,14 @@ async function refreshStoreExternalSnapshotIfStale(storeId: number) {
     ? {
         external_rating: nextExternalRating,
         external_review_count: nextExternalReviewCount,
+        updated_at: new Date().toISOString(),
       }
     : {
         external_rating: nextExternalRating,
         external_review_count: nextExternalReviewCount,
         latitude: nextLatitude,
         longitude: nextLongitude,
+        updated_at: new Date().toISOString(),
       };
 
   const updatedFull = await sb
@@ -1669,7 +1684,7 @@ async function refreshStoreExternalSnapshotIfStale(storeId: number) {
     .update(updatePayload)
     .eq("id", storeId)
     .select(
-      "id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count"
+      "id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count, updated_at"
     )
     .single();
 
@@ -1682,9 +1697,10 @@ async function refreshStoreExternalSnapshotIfStale(storeId: number) {
       .update({
         external_rating: nextExternalRating,
         external_review_count: nextExternalReviewCount,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", storeId)
-      .select("id, name, address, external_rating, external_review_count")
+      .select("id, name, address, external_rating, external_review_count, updated_at")
       .single();
     if (!updatedMinimal.error && updatedMinimal.data) {
       updatedData = updatedMinimal.data as Record<string, unknown>;
@@ -1744,6 +1760,8 @@ async function ensureStoreGeo(store: StoreBase) {
 }
 
 async function importNearbyRestaurantsForStore(store: StoreBase) {
+  const NEARBY_IMPORT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일
+
   if (
     typeof store.latitude !== "number" ||
     typeof store.longitude !== "number" ||
@@ -1751,6 +1769,37 @@ async function importNearbyRestaurantsForStore(store: StoreBase) {
     !Number.isFinite(store.longitude)
   ) {
     return { imported: 0 };
+  }
+
+  // Check if we recently imported nearby restaurants (within 7 days)
+  const lat = store.latitude;
+  const lon = store.longitude;
+  const radiusKm = 1;
+  const latDelta = radiusKm / 111;
+  const lonDelta = radiusKm / (111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+
+  const sb = supabaseServer();
+  const recentCheck = await sb
+    .from("stores")
+    .select("id, updated_at")
+    .gte("latitude", lat - latDelta)
+    .lte("latitude", lat + latDelta)
+    .gte("longitude", lon - lonDelta)
+    .lte("longitude", lon + lonDelta)
+    .not("id", "eq", store.id)
+    .limit(5);
+
+  // If we have nearby stores and at least one was recently updated (within 7 days), skip import
+  if (!recentCheck.error && recentCheck.data && recentCheck.data.length > 0) {
+    const hasRecentUpdate = recentCheck.data.some((row) => {
+      const updatedAt = typeof row.updated_at === "string" ? new Date(row.updated_at).getTime() : 0;
+      const age = Date.now() - updatedAt;
+      return Number.isFinite(age) && age >= 0 && age <= NEARBY_IMPORT_TTL_MS;
+    });
+    
+    if (hasRecentUpdate) {
+      return { imported: 0 };
+    }
   }
 
   const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
