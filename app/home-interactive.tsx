@@ -129,13 +129,15 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   }, []);
 
   const handleNextPhoto = useCallback(() => {
-    if (!storeDetail?.photosFull) return;
-    setCurrentPhotoIndex((prev) => (prev + 1) % storeDetail.photosFull!.length);
+    const photosFull = storeDetail?.photosFull;
+    if (!photosFull) return;
+    setCurrentPhotoIndex((prev) => (prev + 1) % photosFull.length);
   }, [storeDetail?.photosFull]);
 
   const handlePrevPhoto = useCallback(() => {
-    if (!storeDetail?.photosFull) return;
-    setCurrentPhotoIndex((prev) => (prev - 1 + storeDetail.photosFull!.length) % storeDetail.photosFull!.length);
+    const photosFull = storeDetail?.photosFull;
+    if (!photosFull) return;
+    setCurrentPhotoIndex((prev) => (prev - 1 + photosFull.length) % photosFull.length);
   }, [storeDetail?.photosFull]);
 
   // Keyboard navigation for photo modal
@@ -218,10 +220,29 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
           if (selectedStoreIdRef.current === storeId) {
             setStoreDetail(data);
           }
+        } else {
+          // API returned ok: false - keep cached data if available
+          console.error("API returned error for store", storeId, ":", data?.error ?? "Unknown error");
+          if (!cached) {
+            // No cache available - set storeDetail to null to show error message
+            setStoreDetail(null);
+          }
+        }
+      } else {
+        // HTTP error (4xx, 5xx) - keep cached data if available
+        console.error("HTTP error for store", storeId, ":", response.status, response.statusText);
+        if (!cached) {
+          // No cache available - set storeDetail to null to show error message
+          setStoreDetail(null);
         }
       }
     } catch (error) {
+      // Network or other error - keep cached data if available
       console.error("Failed to load store detail:", error);
+      if (!cached) {
+        // No cache available - set storeDetail to null to show error message
+        setStoreDetail(null);
+      }
     } finally {
       setIsLoadingDetail(false);
     }
