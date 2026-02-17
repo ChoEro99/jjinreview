@@ -402,8 +402,32 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
           )}
 
           {isLoadingDetail && (
-            <div style={{ textAlign: "center", padding: 40, color: "#8C7051" }}>
-              로딩 중...
+            <div style={{ textAlign: "center", padding: "60px 20px", color: "#28502E" }}>
+              <style>{`
+                @keyframes spin {
+                  0% { transform: rotate(0deg); }
+                  100% { transform: rotate(360deg); }
+                }
+                @keyframes pulse {
+                  0%, 100% { opacity: 0.4; }
+                  50% { opacity: 1; }
+                }
+              `}</style>
+              <div style={{
+                width: 48,
+                height: 48,
+                border: "4px solid rgba(40, 80, 46, 0.15)",
+                borderTopColor: "#28502E",
+                borderRadius: "50%",
+                animation: "spin 1s linear infinite",
+                margin: "0 auto 20px",
+              }} />
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+                🔍 AI가 리뷰를 분석하고 있어요
+              </div>
+              <div style={{ fontSize: 14, color: "#8C7051", animation: "pulse 1.5s ease-in-out infinite" }}>
+                잠시만 기다려주세요
+              </div>
             </div>
           )}
 
