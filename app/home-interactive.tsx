@@ -300,11 +300,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                         ⭐ {store.summary.weightedRating?.toFixed(1) ?? "-"}
                       </span>
                       <span style={{ color: "#28502E" }}>
-                        리뷰 {Math.max(
-                          store.summary.reviewCount,
-                          store.summary.externalReviewCount,
-                          store.externalReviewCount ?? 0
-                        )}
+                        리뷰 {Math.max(store.summary.reviewCount, store.summary.externalReviewCount)}
                       </span>
                       <span style={{ color: "#28502E" }}>{ratingTrust.emoji} {ratingTrust.totalScore}점</span>
                     </div>
