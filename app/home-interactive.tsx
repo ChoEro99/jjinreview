@@ -267,6 +267,9 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       if (!isNaN(numericId)) {
         handleStoreClick(numericId);
         return;
+      } else {
+        // Malformed store- prefix, treat as Google place ID
+        console.warn("Malformed store ID format:", comparedStoreId, "- treating as Google place ID");
       }
     }
 
@@ -276,6 +279,9 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     setStoreDetail(null);
 
     try {
+      // Normalize function for better matching
+      const normalize = (str: string) => str.toLowerCase().trim().replace(/\s+/g, " ");
+      
       // Search for the store using its name (which should trigger auto-registration if not found)
       const searchQuery = storeAddress ? `${storeName} ${storeAddress}` : storeName;
       const response = await fetch("/api/stores/search", {
@@ -287,11 +293,14 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       if (response.ok) {
         const data = await response.json();
         if (data.ok && data.stores && data.stores.length > 0) {
-          // Find the best match - look for exact name and address match
+          // Find the best match - look for exact name and address match with normalization
+          const normalizedName = normalize(storeName);
+          const normalizedAddress = storeAddress ? normalize(storeAddress) : null;
+          
           const exactMatch = data.stores.find((s: StoreWithSummary) => {
-            const nameMatch = s.name.toLowerCase().trim() === storeName.toLowerCase().trim();
-            const addressMatch = storeAddress 
-              ? (s.address?.toLowerCase().trim() === storeAddress.toLowerCase().trim())
+            const nameMatch = normalize(s.name) === normalizedName;
+            const addressMatch = normalizedAddress 
+              ? (s.address ? normalize(s.address) === normalizedAddress : false)
               : true;
             return nameMatch && addressMatch;
           });
