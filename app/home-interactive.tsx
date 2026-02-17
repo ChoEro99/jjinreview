@@ -100,6 +100,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [hoveredCompareId, setHoveredCompareId] = useState<number | null>(null);
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
+  const [failedPhotos, setFailedPhotos] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     const checkMobile = () => {
@@ -124,12 +125,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
   const handleNextPhoto = useCallback(() => {
     if (!storeDetail?.photosFull) return;
-    setCurrentPhotoIndex((prev) => (prev + 1) % storeDetail.photosFull!.length);
+    setCurrentPhotoIndex((prev) => (prev + 1) % storeDetail.photosFull.length);
   }, [storeDetail?.photosFull]);
 
   const handlePrevPhoto = useCallback(() => {
     if (!storeDetail?.photosFull) return;
-    setCurrentPhotoIndex((prev) => (prev - 1 + storeDetail.photosFull!.length) % storeDetail.photosFull!.length);
+    setCurrentPhotoIndex((prev) => (prev - 1 + storeDetail.photosFull.length) % storeDetail.photosFull.length);
   }, [storeDetail?.photosFull]);
 
   // Keyboard navigation for photo modal
@@ -189,6 +190,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     setSelectedStoreId(storeId);
     setIsLoadingDetail(true);
     setStoreDetail(null);
+    setFailedPhotos(new Set()); // Reset failed photos for new store
 
     try {
       const response = await fetch(`/api/stores/${storeId}`);
@@ -468,30 +470,46 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                     >
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8 }}>
                         {storeDetail.photos.slice(0, 3).map((photoUrl, idx) => (
-                          <img
+                          <div
                             key={idx}
-                            src={photoUrl}
-                            alt={`${storeDetail.store.name} 사진 ${idx + 1}`}
-                            loading="lazy"
-                            onClick={() => handlePhotoClick(idx)}
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).style.display = "none";
-                            }}
                             style={{
                               width: "100%",
                               height: "100px",
-                              objectFit: "cover",
                               borderRadius: 8,
-                              cursor: "pointer",
-                              transition: "transform 0.2s ease",
+                              overflow: "hidden",
+                              background: failedPhotos.has(idx) ? "rgba(140, 112, 81, 0.2)" : "transparent",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
                             }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.transform = "scale(1.05)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.transform = "scale(1)";
-                            }}
-                          />
+                          >
+                            {failedPhotos.has(idx) ? (
+                              <span style={{ fontSize: 12, color: "#8C7051" }}>사진 로드 실패</span>
+                            ) : (
+                              <img
+                                src={photoUrl}
+                                alt={`${storeDetail.store.name} 사진 ${idx + 1}`}
+                                loading="lazy"
+                                onClick={() => handlePhotoClick(idx)}
+                                onError={() => {
+                                  setFailedPhotos(prev => new Set(prev).add(idx));
+                                }}
+                                style={{
+                                  width: "100%",
+                                  height: "100%",
+                                  objectFit: "cover",
+                                  cursor: "pointer",
+                                  transition: "transform 0.2s ease",
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.transform = "scale(1.05)";
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.transform = "scale(1)";
+                                }}
+                              />
+                            )}
+                          </div>
                         ))}
                       </div>
                     </div>
@@ -582,20 +600,35 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                   )}
 
                   {/* Photo */}
-                  <img
-                    src={storeDetail.photosFull[currentPhotoIndex]}
-                    alt={`${storeDetail.store.name} 사진`}
-                    onClick={(e) => e.stopPropagation()}
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                    style={{
-                      maxWidth: "90%",
-                      maxHeight: "90%",
-                      objectFit: "contain",
-                      borderRadius: 8,
-                    }}
-                  />
+                  {failedPhotos.has(currentPhotoIndex) ? (
+                    <div
+                      style={{
+                        background: "rgba(140, 112, 81, 0.3)",
+                        padding: "40px 60px",
+                        borderRadius: 8,
+                        textAlign: "center",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ fontSize: 48, marginBottom: 16 }}>🖼️</div>
+                      <div style={{ fontSize: 16, color: "#ffffff" }}>사진을 불러올 수 없습니다</div>
+                    </div>
+                  ) : (
+                    <img
+                      src={storeDetail.photosFull[currentPhotoIndex]}
+                      alt={`${storeDetail.store.name} 사진`}
+                      onClick={(e) => e.stopPropagation()}
+                      onError={() => {
+                        setFailedPhotos(prev => new Set(prev).add(currentPhotoIndex));
+                      }}
+                      style={{
+                        maxWidth: "90%",
+                        maxHeight: "90%",
+                        objectFit: "contain",
+                        borderRadius: 8,
+                      }}
+                    />
+                  )}
 
                   {/* Next button */}
                   {storeDetail.photosFull.length > 1 && (
