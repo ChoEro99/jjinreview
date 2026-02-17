@@ -35,6 +35,29 @@ type StoreDetailPayload = {
   };
 };
 
+const ADSENSE_CLIENT = "ca-pub-6051453612452994";
+const ADSENSE_SLOT_PLACEHOLDER = "REPLACE_WITH_AD_SLOT";
+
+function AdPlaceholder({ label }: { label: string }) {
+  return (
+    <div
+      data-ad-client={ADSENSE_CLIENT}
+      data-ad-slot={ADSENSE_SLOT_PLACEHOLDER}
+      style={{
+        border: "1px dashed #c6b9a6",
+        borderRadius: 12,
+        padding: "12px 14px",
+        fontSize: 12,
+        color: "#8c7f73",
+        background: "rgba(255, 255, 255, 0.6)",
+        textAlign: "center",
+      }}
+    >
+      광고 영역 ({label}) · 슬롯 ID 입력 후 활성화
+    </div>
+  );
+}
+
 function reliabilityBySnapshot(rating: number | null, reviewCount: number) {
   if (reviewCount >= 300) return "안정적 평점";
   if (reviewCount >= 120) return "비교적 안정";
@@ -217,11 +240,12 @@ export default function HomeInteractive({ stores }: Props) {
 
       const normalize = (v: string | null | undefined) =>
         (v ?? "").toLowerCase().replace(/\s+/g, "").replace(/[()\-_/.,]/g, "");
-      const target = json.stores.find(
-        (row) =>
-          normalize(row.name) === normalize(item.name) &&
-          normalize(row.address) === normalize(item.address)
-      ) ?? json.stores[0];
+      const target =
+        json.stores.find(
+          (row) =>
+            normalize(row.name) === normalize(item.name) &&
+            normalize(row.address) === normalize(item.address)
+        ) ?? json.stores[0];
 
       setQuery(item.name);
       setActiveQuery(item.name);
@@ -301,7 +325,11 @@ export default function HomeInteractive({ stores }: Props) {
           maxWidth: isMobile ? "100%" : undefined,
           padding: isMobile ? "12px 12px 20px" : 16,
           display: "grid",
-          gridTemplateColumns: isMobile ? "1fr" : showDetailPane ? "minmax(260px, 32%) minmax(0, 1fr)" : "1fr",
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : showDetailPane
+              ? "minmax(260px, 32%) minmax(0, 1fr)"
+              : "1fr",
           gap: isMobile ? 10 : 14,
           alignContent: "start",
         }}
@@ -319,7 +347,8 @@ export default function HomeInteractive({ stores }: Props) {
             height: isMobile ? undefined : showDetailPane ? "fit-content" : undefined,
           }}
         >
-          <h1 style={{ margin: 0, fontSize: isMobile ? 24 : 34, fontWeight: 900, letterSpacing: "-0.02em" }}>
+          <h1 style={{ margin: 0, fontSize: isMobile ? 24 : 34, fontWeight: 900, letterSpacing: "-0.02em" }}
+          >
             이 별점 믿어도 될까?
           </h1>
           <form
@@ -380,8 +409,17 @@ export default function HomeInteractive({ stores }: Props) {
               <div style={{ marginTop: 4, fontSize: 13, textAlign: isMobile ? "left" : "center" }}>
                 검색 결과 {searchResults.length}개
               </div>
-              {searchLoading ? <div style={{ fontSize: 12, textAlign: isMobile ? "left" : "center" }}>검색 중...</div> : null}
-              {searchError ? <div style={{ fontSize: 12, textAlign: isMobile ? "left" : "center" }}>{searchError}</div> : null}
+              <AdPlaceholder label="검색 결과 상단" />
+              {searchLoading ? (
+                <div style={{ fontSize: 12, textAlign: isMobile ? "left" : "center" }}>
+                  검색 중...
+                </div>
+              ) : null}
+              {searchError ? (
+                <div style={{ fontSize: 12, textAlign: isMobile ? "left" : "center" }}>
+                  {searchError}
+                </div>
+              ) : null}
 
               <ul
                 style={{
@@ -441,7 +479,15 @@ export default function HomeInteractive({ stores }: Props) {
                           {store.name}
                         </div>
                         <div style={{ marginTop: 4, fontSize: 12 }}>{store.address ?? "주소 없음"}</div>
-                        <div style={{ marginTop: 6, display: "flex", gap: 10, fontSize: 12, flexWrap: "wrap" }}>
+                        <div
+                          style={{
+                            marginTop: 6,
+                            display: "flex",
+                            gap: 10,
+                            fontSize: 12,
+                            flexWrap: "wrap",
+                          }}
+                        >
                           <span>⭐ {store.externalRating?.toFixed(1) ?? "-"}</span>
                           <span>리뷰 {count}</span>
                           <span>🔒 {label}</span>
@@ -473,11 +519,11 @@ export default function HomeInteractive({ stores }: Props) {
                 </div>
               ) : null}
             </>
-        ) : (
-          <div style={{ marginTop: 4, fontSize: 13, textAlign: isMobile ? "left" : "center" }}>
-            가게 정보는 최소 7일 단위로 업데이트 됩니다.
-          </div>
-        )}
+          ) : (
+            <div style={{ marginTop: 4, fontSize: 13, textAlign: isMobile ? "left" : "center" }}>
+              가게 정보는 최소 7일 단위로 업데이트 됩니다.
+            </div>
+          )}
         </aside>
 
         <section style={{ padding: isMobile ? 0 : 4, display: showDetailPane ? "block" : "none" }}>
@@ -496,7 +542,14 @@ export default function HomeInteractive({ stores }: Props) {
                 gap: isMobile ? 10 : 12,
               }}
             >
-              <div style={{ fontSize: isMobile ? 26 : 34, fontWeight: 900, lineHeight: 1.25, overflowWrap: "anywhere" }}>
+              <div
+                style={{
+                  fontSize: isMobile ? 26 : 34,
+                  fontWeight: 900,
+                  lineHeight: 1.25,
+                  overflowWrap: "anywhere",
+                }}
+              >
                 🍣 {selectedDetail.store.name}
               </div>
               <div style={{ fontSize: isMobile ? 28 : 28, fontWeight: 800 }}>
@@ -519,6 +572,7 @@ export default function HomeInteractive({ stores }: Props) {
                 리뷰 {selectedDetail.insight.reviewCount}개 · 같은 안정성 라벨끼리 비교 ·{" "}
                 {selectedDetail.store.address ?? "주소 없음"}
               </div>
+              <AdPlaceholder label="가게 상세 요약 하단" />
               {selectedDetail.insight.comparedStores.length ? (
                 <section
                   style={{
@@ -533,7 +587,14 @@ export default function HomeInteractive({ stores }: Props) {
                   <div style={{ fontSize: 14, fontWeight: 800 }}>
                     1km 비교 대상 (총 {selectedDetail.insight.comparedStores.length}개)
                   </div>
-                  <ul style={{ margin: 0, paddingLeft: 18, maxHeight: isMobile ? "42vh" : undefined, overflowY: isMobile ? "auto" : undefined }}>
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: 18,
+                      maxHeight: isMobile ? "42vh" : undefined,
+                      overflowY: isMobile ? "auto" : undefined,
+                    }}
+                  >
                     {selectedDetail.insight.comparedStores.map((item) => (
                       <li key={`cmp-${item.id}`} style={{ fontSize: 13, marginBottom: 2 }}>
                         {item.isSelf ? (
@@ -579,6 +640,10 @@ export default function HomeInteractive({ stores }: Props) {
               ) : null}
             </section>
           ) : null}
+        </section>
+
+        <section style={{ marginTop: isMobile ? 8 : 0, gridColumn: "1 / -1" }}>
+          <AdPlaceholder label="페이지 하단" />
         </section>
       </div>
     </main>
