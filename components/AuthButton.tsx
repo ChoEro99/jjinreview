@@ -40,12 +40,12 @@ export default function AuthButton() {
   const [isLoadingMyReviews, setIsLoadingMyReviews] = useState(false);
   const [myReviewsError, setMyReviewsError] = useState<string | null>(null);
   const [isDraggingMyReviews, setIsDraggingMyReviews] = useState(false);
-  const carouselRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ isDragging: boolean; startX: number; startScrollLeft: number }>({
+  const dragRef = useRef<{ isDragging: boolean; startX: number; moved: boolean }>({
     isDragging: false,
     startX: 0,
-    startScrollLeft: 0,
+    moved: false,
   });
+  const wheelLockRef = useRef(false);
 
   const openMyReviews = async () => {
     setMyReviewsOpen(true);
@@ -63,9 +63,6 @@ export default function AuthButton() {
       const reviews = Array.isArray(result.reviews) ? result.reviews : [];
       setMyReviews(reviews);
       setMyReviewsIndex(0);
-      requestAnimationFrame(() => {
-        if (carouselRef.current) carouselRef.current.scrollLeft = 0;
-      });
     } catch (error) {
       console.error("Failed to load my reviews:", error);
       setMyReviewsError("내 리뷰를 불러오지 못했습니다.");
@@ -76,20 +73,33 @@ export default function AuthButton() {
     }
   };
 
+  const moveReviewIndex = (direction: -1 | 1) => {
+    if (myReviews.length <= 1) return;
+    setMyReviewsIndex((prev) => {
+      const next = prev + direction;
+      if (next < 0) return myReviews.length - 1;
+      if (next >= myReviews.length) return 0;
+      return next;
+    });
+  };
+
   const handleMyReviewsMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 0 || !carouselRef.current) return;
+    if (e.button !== 0) return;
     dragRef.current = {
       isDragging: true,
       startX: e.clientX,
-      startScrollLeft: carouselRef.current.scrollLeft,
+      moved: false,
     };
     setIsDraggingMyReviews(true);
   };
 
   const handleMyReviewsMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!dragRef.current.isDragging || !carouselRef.current) return;
+    if (!dragRef.current.isDragging) return;
     const deltaX = e.clientX - dragRef.current.startX;
-    carouselRef.current.scrollLeft = dragRef.current.startScrollLeft - deltaX;
+    if (Math.abs(deltaX) < 45) return;
+    dragRef.current.moved = true;
+    dragRef.current.startX = e.clientX;
+    moveReviewIndex(deltaX > 0 ? -1 : 1);
   };
 
   const handleMyReviewsMouseUpOrLeave = () => {
@@ -98,13 +108,17 @@ export default function AuthButton() {
     setIsDraggingMyReviews(false);
   };
 
-  const handleMyReviewsScroll = () => {
-    if (!carouselRef.current) return;
-    const width = carouselRef.current.clientWidth;
-    if (!width) return;
-    const index = Math.round(carouselRef.current.scrollLeft / width);
-    const safeIndex = Math.max(0, Math.min(myReviews.length - 1, index));
-    if (safeIndex !== myReviewsIndex) setMyReviewsIndex(safeIndex);
+  const handleMyReviewsWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (myReviews.length <= 1) return;
+    const dominantDelta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    if (Math.abs(dominantDelta) < 8) return;
+    e.preventDefault();
+    if (wheelLockRef.current) return;
+    wheelLockRef.current = true;
+    moveReviewIndex(dominantDelta > 0 ? 1 : -1);
+    window.setTimeout(() => {
+      wheelLockRef.current = false;
+    }, 160);
   };
 
   if (session?.user) {
@@ -249,67 +263,100 @@ export default function AuthButton() {
                 </div>
               ) : (
                 <>
-                  <div
-                    ref={carouselRef}
-                    className="hide-scrollbar"
-                    onMouseDown={handleMyReviewsMouseDown}
-                    onMouseMove={handleMyReviewsMouseMove}
-                    onMouseUp={handleMyReviewsMouseUpOrLeave}
-                    onMouseLeave={handleMyReviewsMouseUpOrLeave}
-                    onScroll={handleMyReviewsScroll}
-                    style={{
-                      display: "flex",
-                      gap: 12,
-                      overflowX: "auto",
-                      scrollSnapType: "x mandatory",
-                      scrollbarWidth: "none",
-                      cursor: isDraggingMyReviews ? "grabbing" : "grab",
-                    }}
-                  >
-                    {myReviews.map((review) => (
+                  {(() => {
+                    const current = myReviews[myReviewsIndex];
+                    const prev =
+                      myReviews[(myReviewsIndex - 1 + myReviews.length) % myReviews.length];
+                    const next = myReviews[(myReviewsIndex + 1) % myReviews.length];
+                    const renderReviewCard = (
+                      review: MyReview,
+                      variant: "center" | "left" | "right"
+                    ) => {
+                      const isCenter = variant === "center";
+                      const transform =
+                        variant === "center"
+                          ? "translateX(-50%) scale(1)"
+                          : variant === "left"
+                            ? "translateX(calc(-50% - 170px)) scale(0.9)"
+                            : "translateX(calc(-50% + 170px)) scale(0.9)";
+                      return (
+                        <div
+                          key={`${variant}-${review.id}`}
+                          style={{
+                            position: "absolute",
+                            left: "50%",
+                            top: 0,
+                            width: "min(380px, 82vw)",
+                            minHeight: 290,
+                            border: "1px solid rgba(140, 112, 81, 0.35)",
+                            borderRadius: 14,
+                            padding: 14,
+                            background: "rgba(71, 104, 44, 0.08)",
+                            transform,
+                            opacity: isCenter ? 1 : 0.52,
+                            boxShadow: isCenter
+                              ? "0 10px 28px rgba(25, 35, 20, 0.22)"
+                              : "0 5px 14px rgba(25, 35, 20, 0.12)",
+                            zIndex: isCenter ? 3 : 2,
+                            pointerEvents: isCenter ? "auto" : "none",
+                            transition: "transform 0.22s ease, opacity 0.22s ease",
+                          }}
+                        >
+                          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
+                            {review.storeName ?? `가게 #${review.storeId}`}
+                          </div>
+                          <div style={{ fontSize: 14, marginBottom: 6 }}>
+                            평점 {Number(review.rating).toFixed(1)}점
+                          </div>
+                          <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 6 }}>
+                            {[
+                              review.food ? `음식 ${LABEL_MAP[review.food]}` : null,
+                              review.price ? `가격 ${LABEL_MAP[review.price]}` : null,
+                              review.service ? `서비스 ${LABEL_MAP[review.service]}` : null,
+                              review.space ? `공간 ${LABEL_MAP[review.space]}` : null,
+                              review.waitTime ? `대기 ${LABEL_MAP[review.waitTime]}` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ") || "선택 항목 없음"}
+                          </div>
+                          {review.comment && (
+                            <div style={{ fontSize: 14, lineHeight: 1.45, marginBottom: 6 }}>
+                              {review.comment}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 12, color: "#8C7051" }}>
+                            {new Date(review.createdAt).toLocaleString("ko-KR")}
+                          </div>
+                        </div>
+                      );
+                    };
+
+                    return (
                       <div
-                        key={review.id}
+                        onMouseDown={handleMyReviewsMouseDown}
+                        onMouseMove={handleMyReviewsMouseMove}
+                        onMouseUp={handleMyReviewsMouseUpOrLeave}
+                        onMouseLeave={handleMyReviewsMouseUpOrLeave}
+                        onWheel={handleMyReviewsWheel}
                         style={{
-                          minWidth: "100%",
-                          border: "1px solid rgba(140, 112, 81, 0.35)",
-                          borderRadius: 12,
-                          padding: 14,
-                          background: "rgba(71, 104, 44, 0.08)",
-                          scrollSnapAlign: "start",
+                          position: "relative",
+                          height: 330,
+                          overflow: "hidden",
+                          cursor: isDraggingMyReviews ? "grabbing" : "grab",
+                          userSelect: "none",
+                          marginBottom: 12,
                         }}
                       >
-                        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
-                          {review.storeName ?? `가게 #${review.storeId}`}
-                        </div>
-                        <div style={{ fontSize: 14, marginBottom: 6 }}>
-                          평점 {Number(review.rating).toFixed(1)}점
-                        </div>
-                        <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 6 }}>
-                          {[
-                            review.food ? `음식 ${LABEL_MAP[review.food]}` : null,
-                            review.price ? `가격 ${LABEL_MAP[review.price]}` : null,
-                            review.service ? `서비스 ${LABEL_MAP[review.service]}` : null,
-                            review.space ? `공간 ${LABEL_MAP[review.space]}` : null,
-                            review.waitTime ? `대기 ${LABEL_MAP[review.waitTime]}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "선택 항목 없음"}
-                        </div>
-                        {review.comment && (
-                          <div style={{ fontSize: 14, lineHeight: 1.45, marginBottom: 6 }}>
-                            {review.comment}
-                          </div>
-                        )}
-                        <div style={{ fontSize: 12, color: "#8C7051" }}>
-                          {new Date(review.createdAt).toLocaleString("ko-KR")}
-                        </div>
+                        {myReviews.length > 1 && renderReviewCard(prev, "left")}
+                        {renderReviewCard(current, "center")}
+                        {myReviews.length > 1 && renderReviewCard(next, "right")}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })()}
 
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
                     <span style={{ fontSize: 13, color: "#8C7051" }}>
-                      좌우로 드래그해서 이동
+                      좌우 드래그/휠로 넘기기
                     </span>
                     <span style={{ fontSize: 13, color: "#8C7051" }}>
                       {myReviewsIndex + 1} / {myReviews.length}
