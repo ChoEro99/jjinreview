@@ -888,6 +888,7 @@ function sortByNearest(
 // Snapshot TTL in days
 const SNAPSHOT_TTL_DAYS = 7;
 const snapshotDeletionLocks = new Set<number>();
+const SNAPSHOT_DELETION_LOCK_TTL_MS = 30_000;
 
 type StoreDetailSnapshot = {
   store: StoreBase;
@@ -942,6 +943,9 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
       // Snapshot expired, return null to trigger recalculation
       if (!snapshotDeletionLocks.has(storeId)) {
         snapshotDeletionLocks.add(storeId);
+        const lockTimeout = setTimeout(() => {
+          snapshotDeletionLocks.delete(storeId);
+        }, SNAPSHOT_DELETION_LOCK_TTL_MS);
         void (async () => {
           try {
             const { error } = await sb
@@ -951,8 +955,12 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
               .lte("expires_at", now.toISOString());
             if (error) throw error;
           } catch (error) {
-            console.error(`Error deleting expired snapshot for store ${storeId}:`, error);
+            console.error(
+              `Error deleting expired snapshot for store ${storeId} (will retry on next request):`,
+              error
+            );
           } finally {
+            clearTimeout(lockTimeout);
             snapshotDeletionLocks.delete(storeId);
           }
         })();
