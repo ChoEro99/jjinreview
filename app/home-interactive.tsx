@@ -122,6 +122,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [failedPhotos, setFailedPhotos] = useState<Set<number>>(new Set());
   const [isListDragging, setIsListDragging] = useState(false);
+  const [isReviewFormOpen, setIsReviewFormOpen] = useState(false);
+  const [showAllComparedStores, setShowAllComparedStores] = useState(false);
   
   // Cache for store details to avoid re-fetching
   const storeDetailCache = useRef<Map<number, StoreDetail>>(new Map());
@@ -266,6 +268,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
     setSelectedStoreId(storeId);
     selectedStoreIdRef.current = storeId;
+    setIsReviewFormOpen(false);
+    setShowAllComparedStores(false);
     setFailedPhotos(new Set());
     setFetchError(false);
 
@@ -711,26 +715,45 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                       
                       return (
                         <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E", marginBottom: 16 }}>
-                          📍 반경 1km 상위 {percentile}% ({rank}위 / {total}개)
+                          📍 1km 이내 상위 {percentile}% ({rank}위 / {total}개)
                         </div>
                       );
                     })()}
 
                     {/* 부가 정보 한 줄 */}
                     <div style={{ fontSize: 13, color: "#8C7051" }}>
-                      리뷰 {Math.max(storeDetail.insight?.reviewCount ?? 0, storeDetail.summary.reviewCount)}개 · 반경 1km 내 가게 비교 · {storeDetail.store.address ?? "주소 정보 없음"}
+                      리뷰 {Math.max(storeDetail.insight?.reviewCount ?? 0, storeDetail.summary.reviewCount)}개 · 1km 이내 가게 비교 · {storeDetail.store.address ?? "주소 정보 없음"}
                     </div>
                   </div>
 
-                  {/* Right side: Photos (desktop only, below on mobile) */}
-                  {storeDetail.photos && storeDetail.photos.length > 0 && (
-                    <div
+                  {/* Right side: action + photos */}
+                  <div
+                    style={{
+                      width: isMobile ? "100%" : "320px",
+                      flexShrink: 0,
+                      marginTop: isMobile ? 16 : 0,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setIsReviewFormOpen((prev) => !prev)}
                       style={{
-                        width: isMobile ? "100%" : "320px",
-                        flexShrink: 0,
-                        marginTop: isMobile ? 16 : 0,
+                        width: "100%",
+                        marginBottom: 10,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(40, 80, 46, 0.5)",
+                        background: isReviewFormOpen ? "rgba(40, 80, 46, 0.14)" : "#28502E",
+                        color: isReviewFormOpen ? "#28502E" : "#ffffff",
+                        fontSize: 14,
+                        fontWeight: 700,
+                        cursor: "pointer",
                       }}
                     >
+                      {isReviewFormOpen ? "리뷰 작성 닫기" : "리뷰 작성"}
+                    </button>
+
+                    {storeDetail.photos && storeDetail.photos.length > 0 && (
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8 }}>
                         {storeDetail.photos.slice(0, 3).map((photoUrl, idx) => (
                           <div
@@ -775,8 +798,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                           </div>
                         ))}
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1007,11 +1030,14 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
               <div style={{ marginBottom: 24 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
-                  반경 1km 비교 가게
+                  1km 이내 가게 비교
                 </h3>
                 {storeDetail.insight?.comparedStores && storeDetail.insight.comparedStores.length > 0 ? (
                   <div style={{ border: "1px solid rgba(140, 112, 81, 0.4)", borderRadius: 12, background: "rgba(140, 112, 81, 0.06)", overflow: "hidden" }}>
-                    {storeDetail.insight.comparedStores.map((comparedStore) => {
+                    {(showAllComparedStores
+                      ? storeDetail.insight.comparedStores
+                      : storeDetail.insight.comparedStores.slice(0, 5)
+                    ).map((comparedStore, idx, list) => {
                       const isHovered = hoveredCompareId === comparedStore.id;
                       const trustScore = computeRatingTrustScore(comparedStore.rating, comparedStore.reviewCount);
                       return (
@@ -1026,7 +1052,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                           onMouseLeave={() => setHoveredCompareId(null)}
                           style={{
                             padding: "10px 14px",
-                            borderBottom: "1px solid rgba(140, 112, 81, 0.4)",
+                            borderBottom: idx === list.length - 1 ? "none" : "1px solid rgba(140, 112, 81, 0.4)",
                             background: comparedStore.isSelf ? "rgba(40, 80, 46, 0.18)" : isHovered ? "rgba(71, 104, 44, 0.15)" : "rgba(140, 112, 81, 0.06)",
                             cursor: comparedStore.isSelf ? "default" : "pointer",
                             transition: "all 0.2s ease",
@@ -1048,6 +1074,28 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                         </div>
                       );
                     })}
+                    {storeDetail.insight.comparedStores.length > 5 && (
+                      <div style={{ padding: 10, borderTop: "1px solid rgba(140, 112, 81, 0.3)", background: "rgba(140, 112, 81, 0.08)", textAlign: "center" }}>
+                        <button
+                          type="button"
+                          onClick={() => setShowAllComparedStores((prev) => !prev)}
+                          style={{
+                            border: "1px solid rgba(40, 80, 46, 0.5)",
+                            background: "transparent",
+                            color: "#28502E",
+                            borderRadius: 8,
+                            padding: "7px 12px",
+                            fontSize: 13,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {showAllComparedStores
+                            ? "접기"
+                            : `더보기 (+${storeDetail.insight.comparedStores.length - 5})`}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div style={{
@@ -1081,12 +1129,14 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               </div>
 
               {/* 리뷰 작성 */}
-              <div style={{ marginBottom: 24 }}>
-                <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
-                  리뷰 작성
-                </h3>
-                <UserReviewForm storeId={selectedStoreId!} />
-              </div>
+              {isReviewFormOpen && (
+                <div style={{ marginBottom: 24 }}>
+                  <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
+                    리뷰 작성
+                  </h3>
+                  <UserReviewForm storeId={selectedStoreId!} />
+                </div>
+              )}
 
               <div>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
