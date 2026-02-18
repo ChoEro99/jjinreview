@@ -18,6 +18,16 @@ function computeSampleSizeScore(reviewCount: number): number {
   return Math.max(2, (reviewCount / 10) * 12);
 }
 
+function getSampleSizeDesc(reviewCount: number): string {
+  if (reviewCount >= 300) return "리뷰가 매우 많음";
+  if (reviewCount >= 200) return "리뷰가 충분히 많음";
+  if (reviewCount >= 100) return "리뷰가 많음";
+  if (reviewCount >= 50) return "리뷰가 적당함";
+  if (reviewCount >= 20) return "리뷰가 적은 편";
+  if (reviewCount >= 10) return "리뷰가 매우 적음";
+  return "리뷰가 거의 없음";
+}
+
 /**
  * 분포 자연성 점수 계산 (35점 만점)
  */
@@ -46,6 +56,17 @@ function computeNaturalnessScore(rating: number | null, reviewCount: number): nu
   return 20;
 }
 
+function getNaturalnessDesc(rating: number | null, reviewCount: number): string {
+  if (rating === null) return "평점 정보 없음";
+  if (rating >= 4.9 && rating <= 5.0 && reviewCount < 40) return "리뷰가 적은데 평점이 너무 높음";
+  if (rating >= 4.8 && rating < 4.9 && reviewCount < 20) return "리뷰 수 대비 평점이 높은 편";
+  if (rating >= 4.7 && rating < 4.8 && reviewCount < 10) return "리뷰 수 대비 평점이 높은 편";
+  if (rating >= 3.5 && rating < 4.6) return "평점이 자연스러운 범위";
+  if (rating >= 4.6 && rating < 4.7 && reviewCount >= 100) return "리뷰가 충분해 높은 평점도 믿을만함";
+  if (rating >= 4.7 && reviewCount >= 200) return "리뷰가 많아 높은 평점도 신뢰 가능";
+  return "평점 패턴이 다소 불규칙함";
+}
+
 /**
  * 점수에 따른 라벨과 이모지 반환
  */
@@ -69,7 +90,7 @@ export function computeRatingTrustScore(
   reviewCount: number
 ): {
   totalScore: number;
-  breakdown: { sampleSize: number; naturalness: number };
+  breakdown: { sampleSize: number; naturalness: number; sampleSizeDesc: string; naturalnessDesc: string };
   label: string;
   emoji: string;
 } {
@@ -83,6 +104,8 @@ export function computeRatingTrustScore(
     breakdown: {
       sampleSize: Math.round(sampleSize),
       naturalness: Math.round(naturalness),
+      sampleSizeDesc: getSampleSizeDesc(reviewCount),
+      naturalnessDesc: getNaturalnessDesc(rating, reviewCount),
     },
     label,
     emoji,

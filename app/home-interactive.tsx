@@ -57,7 +57,7 @@ interface StoreDetail {
     }>;
     ratingTrustScore?: {
       totalScore: number;
-      breakdown: { sampleSize: number; naturalness: number };
+      breakdown: { sampleSize: number; naturalness: number; sampleSizeDesc: string; naturalnessDesc: string };
       label: string;
       emoji: string;
     };
@@ -589,7 +589,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                             평점 믿음 지수 {emoji} {label} ({totalScore}점)
                           </div>
                           <div style={{ fontSize: 13, color: "#8C7051", marginTop: 4 }}>
-                            표본 {breakdown.sampleSize}점 · 자연스러움 {breakdown.naturalness}점
+                            📊 {breakdown.sampleSizeDesc} (표본 {breakdown.sampleSize}점) · {breakdown.naturalnessDesc} (자연스러움 {breakdown.naturalness}점)
                           </div>
                         </div>
                       );
