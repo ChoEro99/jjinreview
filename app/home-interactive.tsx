@@ -505,6 +505,11 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               {stores.map((store) => {
                 const isSelected = selectedStoreId === store.id;
                 const isHovered = hoveredCardId === store.id;
+                const totalReviewCount = Math.max(
+                  store.summary.reviewCount,
+                  store.summary.externalReviewCount,
+                  store.externalReviewCount ?? 0
+                );
                 
                 // Compute rating trust score for each store
                 const ratingTrust = computeRatingTrustScore(
@@ -547,9 +552,11 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                       </span>
                       <span style={{ color: "#28502E" }}>
                         {/* Use max of summary (cached) and direct externalReviewCount to handle stale cache */}
-                        리뷰 {Math.max(store.summary.reviewCount, store.summary.externalReviewCount, store.externalReviewCount ?? 0)}
+                        리뷰 {totalReviewCount}
                       </span>
-                      <span style={{ color: "#28502E" }}>평점 믿음 지수 {ratingTrust.emoji} {ratingTrust.label} ({ratingTrust.totalScore}점)</span>
+                      <span style={{ color: "#28502E" }}>
+                        평점 믿음 지수 {totalReviewCount > 0 ? `${ratingTrust.emoji} ${ratingTrust.label} (${ratingTrust.totalScore}점)` : "-"}
+                      </span>
                     </div>
                   </div>
                 );
@@ -657,15 +664,21 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                     {/* 평점신뢰도 */}
                     {storeDetail.insight?.ratingTrustScore && (() => {
                       const { label, emoji, totalScore, breakdown } = storeDetail.insight.ratingTrustScore;
+                      const detailReviewCount = Math.max(
+                        storeDetail.insight?.reviewCount ?? 0,
+                        storeDetail.summary.reviewCount
+                      );
                       
                       return (
                         <div style={{ marginBottom: 12 }}>
                           <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E" }}>
-                            평점 믿음 지수 {emoji} {label} ({totalScore}점)
+                            평점 믿음 지수 {detailReviewCount > 0 ? `${emoji} ${label} (${totalScore}점)` : "-"}
                           </div>
-                          <div style={{ fontSize: 13, color: "#8C7051", marginTop: 4 }}>
-                            📊 {breakdown.sampleSizeDesc} (표본 {breakdown.sampleSize}점) · {breakdown.naturalnessDesc} (자연스러움 {breakdown.naturalness}점)
-                          </div>
+                          {detailReviewCount > 0 && (
+                            <div style={{ fontSize: 13, color: "#8C7051", marginTop: 4 }}>
+                              📊 {breakdown.sampleSizeDesc} (표본 {breakdown.sampleSize}점) · {breakdown.naturalnessDesc} (자연스러움 {breakdown.naturalness}점)
+                            </div>
+                          )}
                         </div>
                       );
                     })()}
@@ -970,7 +983,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                             </span>
                           )}
                           <span style={{ marginLeft: 8, color: "#8C7051" }}>
-                            · ⭐{comparedStore.rating.toFixed(1)} · <span style={{ color: "#47682C", fontWeight: 700 }}>★ 앱 점수 {typeof comparedStore.appAverageRating === "number" ? comparedStore.appAverageRating.toFixed(1) : "-"}</span> · 리뷰 {comparedStore.reviewCount} · {trustScore.emoji} {trustScore.totalScore}점
+                            · ⭐{comparedStore.rating.toFixed(1)} · <span style={{ color: "#47682C", fontWeight: 700 }}>★ 앱 점수 {typeof comparedStore.appAverageRating === "number" ? comparedStore.appAverageRating.toFixed(1) : "-"}</span> · 리뷰 {comparedStore.reviewCount} · {comparedStore.reviewCount > 0 ? `${trustScore.emoji} ${trustScore.totalScore}점` : "-"}
                           </span>
                         </div>
                       );

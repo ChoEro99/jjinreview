@@ -78,6 +78,7 @@ export default async function StorePage({ params }: Props) {
 
   const adPct = Math.round(detail.summary.adSuspectRatio * 100);
   const trustPoint = Math.round(detail.summary.trustScore * 100);
+  const hasAnyReview = detail.summary.reviewCount > 0;
 
   return (
     <main style={{ padding: 24, maxWidth: 980, margin: "0 auto" }}>
@@ -158,7 +159,7 @@ export default async function StorePage({ params }: Props) {
           </span>
           <span>리뷰 수: {detail.summary.reviewCount}</span>
           <span>광고 의심 비율: {adPct}%</span>
-          <span>리뷰 신뢰 점수: {trustPoint}점</span>
+          <span>리뷰 신뢰 점수: {hasAnyReview ? `${trustPoint}점` : "-"}</span>
           <span>긍정 비율: {Math.round(detail.summary.positiveRatio * 100)}%</span>
         </div>
         <div style={{ marginTop: 6, fontSize: 13, color: "#8C7051" }}>

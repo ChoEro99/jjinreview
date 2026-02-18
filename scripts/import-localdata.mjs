@@ -79,6 +79,30 @@ function isOpenBusiness(row) {
   return status.includes("영업") || detail === "영업";
 }
 
+function isExcludedStoreName(name) {
+  const text = (name ?? "").toString().trim().toLowerCase();
+  if (!text) return true;
+  const excluded = [
+    "구내식당",
+    "사내식당",
+    "다모임",
+    "편의점",
+    "마트",
+    "약국",
+    "병원",
+    "의원",
+    "학원",
+    "미용실",
+    "주유소",
+    "호텔",
+    "모텔",
+    "펜션",
+    "세탁",
+    "은행",
+  ];
+  return excluded.some((word) => text.includes(word));
+}
+
 async function loadExistingDedupKeys(supabase) {
   const keys = new Set();
   let offset = 0;
@@ -138,6 +162,7 @@ async function main() {
   let totalRows = 0;
   let openRows = 0;
   let noAddressRows = 0;
+  let excludedNameRows = 0;
   let duplicateInCsvRows = 0;
   let duplicateInDbRows = 0;
 
@@ -156,6 +181,10 @@ async function main() {
       const address = pickAddress(row);
       if (!name || !address) {
         noAddressRows += 1;
+        continue;
+      }
+      if (isExcludedStoreName(name)) {
+        excludedNameRows += 1;
         continue;
       }
 
@@ -197,6 +226,7 @@ async function main() {
   console.log(`원본 행 수: ${totalRows.toLocaleString()}`);
   console.log(`영업중 행 수: ${openRows.toLocaleString()}`);
   console.log(`주소/상호 부족 스킵: ${noAddressRows.toLocaleString()}`);
+  console.log(`업종 키워드 필터 스킵: ${excludedNameRows.toLocaleString()}`);
   console.log(`CSV 내부 중복 스킵: ${duplicateInCsvRows.toLocaleString()}`);
   console.log(`DB 기존 중복 스킵: ${duplicateInDbRows.toLocaleString()}`);
   console.log(`신규 삽입 대상: ${insertCandidateRows.toLocaleString()}`);

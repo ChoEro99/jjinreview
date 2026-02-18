@@ -131,6 +131,9 @@ function inferStoreCategoryByName(name: string): StoreCategory {
 function isSearchableStoreName(name: string) {
   const text = name.toLowerCase();
   const excluded = [
+    "구내식당",
+    "사내식당",
+    "다모임",
     "편의점",
     "마트",
     "약국",
