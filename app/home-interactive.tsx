@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
+import UserReviewForm from "@/components/UserReviewForm";
 
 interface StoreBase {
   id: number;
@@ -930,6 +931,14 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 }}
               >
                 광고 영역 (리뷰 목록 상단) · 슬롯 ID 입력 후 활성화
+              </div>
+
+              {/* 리뷰 작성 */}
+              <div style={{ marginBottom: 24 }}>
+                <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
+                  리뷰 작성
+                </h3>
+                <UserReviewForm storeId={selectedStoreId!} storeName={storeDetail.store.name} />
               </div>
 
               <div>
