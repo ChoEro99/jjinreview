@@ -114,6 +114,18 @@ type NearbyRecommendationApiRow = {
   store: StoreWithSummary;
 };
 
+function isAbortLikeError(error: unknown) {
+  if (error instanceof DOMException && error.name === "AbortError") return true;
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("abort") ||
+    message.includes("aborted") ||
+    message.includes("cancel") ||
+    message.includes("canceled")
+  );
+}
+
 const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -325,8 +337,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
           }
         })
         .catch((error) => {
-          // AbortError는 정상 취소이므로 무시
-          if (error instanceof DOMException && error.name === "AbortError") return;
+          // 취소된 요청은 정상 동작으로 간주
+          if (isAbortLikeError(error)) return;
           // 백그라운드 갱신 실패는 캐시가 이미 표시 중이므로 로깅만
           console.error("Background refresh failed for store", storeId, ":", error);
         });
@@ -365,8 +377,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         }
       }
     } catch (error) {
-      // AbortError는 정상 취소이므로 에러 표시 안 함
-      if (error instanceof DOMException && error.name === "AbortError") return;
+      // 취소된 요청은 정상 동작으로 간주
+      if (isAbortLikeError(error)) return;
       if (selectedStoreIdRef.current === storeId) {
         setStoreDetail(null);
         setFetchError(true);
