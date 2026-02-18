@@ -962,7 +962,6 @@ async function saveStoreDetailSnapshot(storeId: number, snapshot: StoreDetailSna
       .upsert({
         store_id: storeId,
         snapshot_data: snapshot,
-        created_at: now.toISOString(),
         expires_at: expiresAt.toISOString(),
       }, {
         onConflict: "store_id"
@@ -979,7 +978,8 @@ export async function getStoreDetail(id: number) {
   
   const sb = supabaseServer();
   
-  // Always load reviews fresh (not cached)
+  // Always load reviews fresh (not cached) - per requirements, reviews are not included in snapshots
+  // We load them here regardless of cache status because they're always needed in the response
   const baseReviews = await loadReviewsByStoreIds([id]);
   const reviews = await enrichReviews(baseReviews);
   reviews.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
@@ -1113,9 +1113,7 @@ export async function getStoreDetail(id: number) {
   };
   
   // Save snapshot asynchronously (don't wait for it)
-  saveStoreDetailSnapshot(id, snapshot).catch((error) => {
-    console.error("Failed to save snapshot:", error);
-  });
+  saveStoreDetailSnapshot(id, snapshot);
 
   return {
     ...snapshot,
