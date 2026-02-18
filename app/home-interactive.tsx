@@ -125,6 +125,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [failedPhotos, setFailedPhotos] = useState<Set<number>>(new Set());
   const [isListDragging, setIsListDragging] = useState(false);
+  const [listScrollTop, setListScrollTop] = useState(0);
+  const [listViewportHeight, setListViewportHeight] = useState(0);
   const [isReviewFormOpen, setIsReviewFormOpen] = useState(false);
   const [showAllComparedStores, setShowAllComparedStores] = useState(false);
   
@@ -260,6 +262,27 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       }, 0);
     }
   };
+
+  const handleListScroll = () => {
+    if (!storeListRef.current) return;
+    setListScrollTop(storeListRef.current.scrollTop);
+  };
+
+  useEffect(() => {
+    const el = storeListRef.current;
+    if (!el) return;
+    setListViewportHeight(el.clientHeight);
+    setListScrollTop(el.scrollTop);
+  }, [isMobile, selectedStoreId, stores.length]);
+
+  useEffect(() => {
+    const updateListViewport = () => {
+      if (!storeListRef.current) return;
+      setListViewportHeight(storeListRef.current.clientHeight);
+    };
+    window.addEventListener("resize", updateListViewport);
+    return () => window.removeEventListener("resize", updateListViewport);
+  }, []);
 
   const handleStoreClick = async (storeId: number) => {
     // 이전 진행 중인 fetch 취소
@@ -417,6 +440,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   };
 
   const showDetailPane = selectedStoreId !== null;
+  const LIST_CARD_HEIGHT = 126;
+  const LIST_OVERSCAN = 5;
 
   const storeCards = useMemo(
     () =>
@@ -444,6 +469,26 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       trustScore: computeRatingTrustScore(comparedStore.rating, comparedStore.reviewCount),
     }));
   }, [storeDetail?.insight?.comparedStores, showAllComparedStores]);
+
+  const virtualizedStoreCards = useMemo(() => {
+    if (!storeCards.length) {
+      return { visible: [] as typeof storeCards, topSpacer: 0, bottomSpacer: 0 };
+    }
+
+    if (listViewportHeight <= 0) {
+      return { visible: storeCards, topSpacer: 0, bottomSpacer: 0 };
+    }
+
+    const startIndex = Math.max(0, Math.floor(listScrollTop / LIST_CARD_HEIGHT) - LIST_OVERSCAN);
+    const visibleCount = Math.ceil(listViewportHeight / LIST_CARD_HEIGHT) + LIST_OVERSCAN * 2;
+    const endIndex = Math.min(storeCards.length, startIndex + visibleCount);
+
+    return {
+      visible: storeCards.slice(startIndex, endIndex),
+      topSpacer: startIndex * LIST_CARD_HEIGHT,
+      bottomSpacer: Math.max(0, (storeCards.length - endIndex) * LIST_CARD_HEIGHT),
+    };
+  }, [storeCards, listScrollTop, listViewportHeight]);
 
   // Calculate combined ad risk probability from individual risk scores
   const calculateCombinedAdRisk = (adRisk: number, undisclosedAdRisk: number): number => {
@@ -541,6 +586,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               onMouseMove={handleListMouseMove}
               onMouseUp={handleListMouseUpOrLeave}
               onMouseLeave={handleListMouseUpOrLeave}
+              onScroll={handleListScroll}
               style={{
                 maxHeight: `calc(100vh - ${HEADER_AND_SEARCH_HEIGHT}px)`,
                 overflowY: "auto",
@@ -549,7 +595,10 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 cursor: isListDragging ? "grabbing" : "grab",
               }}
             >
-              {storeCards.map(({ store, totalReviewCount, externalCount, inappCount, ratingTrust }) => {
+              {virtualizedStoreCards.topSpacer > 0 && (
+                <div aria-hidden style={{ height: virtualizedStoreCards.topSpacer }} />
+              )}
+              {virtualizedStoreCards.visible.map(({ store, totalReviewCount, externalCount, inappCount, ratingTrust }) => {
                 const isSelected = selectedStoreId === store.id;
                 const isHovered = hoveredCardId === store.id;
 
@@ -593,6 +642,9 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                   </div>
                 );
               })}
+              {virtualizedStoreCards.bottomSpacer > 0 && (
+                <div aria-hidden style={{ height: virtualizedStoreCards.bottomSpacer }} />
+              )}
             </div>
           </div>
         </aside>

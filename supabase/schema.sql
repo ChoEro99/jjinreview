@@ -78,6 +78,7 @@ create table if not exists public.store_detail_snapshots (
 );
 
 create index if not exists idx_reviews_store_id on public.reviews(store_id);
+create index if not exists idx_reviews_store_id_created_at on public.reviews(store_id, created_at desc);
 create index if not exists idx_reviews_source on public.reviews(source);
 create index if not exists idx_reviews_created_at on public.reviews(created_at desc);
 create index if not exists idx_review_analyses_review_id_created_at on public.review_analyses(review_id, created_at desc);
@@ -113,6 +114,11 @@ create table if not exists public.user_reviews (
 );
 
 create index if not exists idx_user_reviews_store_id on public.user_reviews(store_id);
+create index if not exists idx_user_reviews_store_id_created_at on public.user_reviews(store_id, created_at desc);
 create index if not exists idx_user_reviews_user_id on public.user_reviews(user_id);
 create index if not exists idx_user_reviews_ip_hash on public.user_reviews(ip_hash);
 create index if not exists idx_user_reviews_created_at on public.user_reviews(created_at desc);
+
+create extension if not exists pg_trgm;
+create index if not exists idx_stores_name_trgm on public.stores using gin (lower(name) gin_trgm_ops);
+create index if not exists idx_stores_address_trgm on public.stores using gin (lower(address) gin_trgm_ops);

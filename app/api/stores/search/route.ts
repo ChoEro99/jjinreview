@@ -1,6 +1,17 @@
 import { NextResponse } from "next/server";
 import { searchAndAutoRegisterStoreByKeyword } from "@/src/lib/store-service";
 
+type SearchResponse = Awaited<ReturnType<typeof searchAndAutoRegisterStoreByKeyword>>;
+const SEARCH_CACHE_TTL_MS = 60 * 1000;
+const searchCache = new Map<string, { expiresAt: number; payload: SearchResponse }>();
+
+function cleanupSearchCache(now: number) {
+  if (searchCache.size < 800) return;
+  for (const [key, entry] of searchCache.entries()) {
+    if (entry.expiresAt <= now) searchCache.delete(key);
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = (await req.json().catch(() => ({}))) as {
@@ -33,7 +44,23 @@ export async function POST(req: Request) {
         ? { latitude: body.userLatitude, longitude: body.userLongitude }
         : null;
 
+    const locationKey = userLocation
+      ? `${userLocation.latitude.toFixed(3)},${userLocation.longitude.toFixed(3)}`
+      : "none";
+    const cacheKey = `${query.toLowerCase()}|${limit}|${offset}|${locationKey}`;
+    const now = Date.now();
+    cleanupSearchCache(now);
+    const hit = searchCache.get(cacheKey);
+    if (hit && hit.expiresAt > now) {
+      return NextResponse.json({ ok: true, ...hit.payload });
+    }
+
     const result = await searchAndAutoRegisterStoreByKeyword(query, limit, userLocation, offset);
+    searchCache.set(cacheKey, {
+      expiresAt: now + SEARCH_CACHE_TTL_MS,
+      payload: result,
+    });
+
     return NextResponse.json({ ok: true, ...result });
   } catch (e: unknown) {
     return NextResponse.json(

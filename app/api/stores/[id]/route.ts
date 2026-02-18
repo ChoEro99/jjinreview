@@ -1,6 +1,18 @@
 import { NextResponse } from "next/server";
 import { getStoreDetail } from "@/src/lib/store-service";
 
+type StoreDetailResponse = Awaited<ReturnType<typeof getStoreDetail>>;
+
+const DETAIL_CACHE_TTL_MS = 60 * 1000;
+const detailCache = new Map<string, { expiresAt: number; payload: StoreDetailResponse }>();
+
+function cleanupDetailCache(now: number) {
+  if (detailCache.size < 500) return;
+  for (const [key, entry] of detailCache.entries()) {
+    if (entry.expiresAt <= now) detailCache.delete(key);
+  }
+}
+
 export async function GET(
   req: Request,
   context: { params: Promise<{ id: string }> }
@@ -14,7 +26,19 @@ export async function GET(
       return NextResponse.json({ ok: false, error: "invalid id" }, { status: 400 });
     }
 
+    const cacheKey = `${storeId}:${forceGoogle ? "g1" : "g0"}`;
+    const now = Date.now();
+    cleanupDetailCache(now);
+    const hit = detailCache.get(cacheKey);
+    if (hit && hit.expiresAt > now) {
+      return NextResponse.json({ ok: true, ...hit.payload });
+    }
+
     const detail = await getStoreDetail(storeId, { forceGoogle });
+    detailCache.set(cacheKey, {
+      expiresAt: now + DETAIL_CACHE_TTL_MS,
+      payload: detail,
+    });
 
     return NextResponse.json({
       ok: true,
