@@ -1171,7 +1171,14 @@ type StoreDetailSnapshot = {
     radiusKm: number;
     ratingTrustScore: {
       totalScore: number;
-      breakdown: { sampleSize: number; stability: number; freshness: number };
+      breakdown: {
+        sampleSize: number;
+        stability: number;
+        freshness: number;
+        sampleSizeEmoji: string;
+        stabilityEmoji: string;
+        freshnessEmoji: string;
+      };
       label: string;
       emoji: string;
     };

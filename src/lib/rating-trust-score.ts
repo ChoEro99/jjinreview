@@ -1,6 +1,6 @@
 /**
  * 평점 믿음 지수
- * 총점 = 표본 신뢰(50) + 평점 안정성(35) + 최신성(15)
+ * 총점 = 표본 신뢰(50) + 평점 안정성(25) + 최신성(25)
  * 출처 일치도는 의도적으로 제외함.
  */
 
@@ -24,11 +24,11 @@ function getSampleSizeDesc(reviewCount: number): string {
 }
 
 function computeStabilityScore(rating: number | null, reviewCount: number): number {
-  if (rating === null || reviewCount <= 0) return 8;
+  if (rating === null || reviewCount <= 0) return 6;
   const highRating = clamp((rating - 4.2) / 0.8, 0, 1);
   const lowSamplePenalty = clamp((40 - reviewCount) / 40, 0, 1);
-  const extremePenalty = highRating * lowSamplePenalty * 25;
-  return clamp(35 - extremePenalty, 5, 35);
+  const extremePenalty = highRating * lowSamplePenalty * 19;
+  return clamp(25 - extremePenalty, 4, 25);
 }
 
 function getStabilityDesc(rating: number | null, reviewCount: number): string {
@@ -39,16 +39,16 @@ function getStabilityDesc(rating: number | null, reviewCount: number): string {
 }
 
 function computeFreshnessScore(lastSyncedAt?: string | null): number {
-  if (!lastSyncedAt) return 7;
+  if (!lastSyncedAt) return 10;
   const ts = Date.parse(lastSyncedAt);
-  if (!Number.isFinite(ts)) return 7;
+  if (!Number.isFinite(ts)) return 10;
   const days = (Date.now() - ts) / (24 * 60 * 60 * 1000);
-  if (days <= 1) return 15;
-  if (days <= 3) return 13;
-  if (days <= 7) return 11;
-  if (days <= 14) return 8;
-  if (days <= 30) return 5;
-  return 2;
+  if (days <= 1) return 25;
+  if (days <= 3) return 22;
+  if (days <= 7) return 19;
+  if (days <= 14) return 14;
+  if (days <= 30) return 9;
+  return 4;
 }
 
 function getFreshnessDesc(lastSyncedAt?: string | null): string {
@@ -60,6 +60,15 @@ function getFreshnessDesc(lastSyncedAt?: string | null): string {
   if (days <= 7) return "최근 1주 내 갱신됨";
   if (days <= 30) return "최근 1개월 내 갱신됨";
   return "갱신된 지 오래됨";
+}
+
+function getComponentEmoji(score: number, maxScore: number): string {
+  const ratio = maxScore > 0 ? score / maxScore : 0;
+  if (ratio >= 0.8) return "🟢";
+  if (ratio >= 0.6) return "🔵";
+  if (ratio >= 0.4) return "🟡";
+  if (ratio >= 0.2) return "🟠";
+  return "🔴";
 }
 
 /**
@@ -90,6 +99,9 @@ export function computeRatingTrustScore(
     sampleSize: number;
     stability: number;
     freshness: number;
+    sampleSizeEmoji: string;
+    stabilityEmoji: string;
+    freshnessEmoji: string;
     sampleSizeDesc: string;
     stabilityDesc: string;
     freshnessDesc: string;
@@ -109,6 +121,9 @@ export function computeRatingTrustScore(
       sampleSize: Math.round(sampleSize),
       stability: Math.round(stability),
       freshness: Math.round(freshness),
+      sampleSizeEmoji: getComponentEmoji(sampleSize, 50),
+      stabilityEmoji: getComponentEmoji(stability, 25),
+      freshnessEmoji: getComponentEmoji(freshness, 25),
       sampleSizeDesc: getSampleSizeDesc(reviewCount),
       stabilityDesc: getStabilityDesc(rating, reviewCount),
       freshnessDesc: getFreshnessDesc(options?.lastSyncedAt),
