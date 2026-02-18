@@ -3024,7 +3024,8 @@ export async function searchAndAutoRegisterStoreByKeyword(
   let usedGoogle = false;
   let autoRegistered = false;
 
-  if (combined.size < fetchTarget) {
+  // Google Places fallback only when DB has zero matches.
+  if (combined.size === 0) {
     const googleCandidates = await searchGooglePlacesByKeyword(normalizedKeyword, fetchTarget);
     if (googleCandidates.length) {
       usedGoogle = true;
@@ -3035,7 +3036,7 @@ export async function searchAndAutoRegisterStoreByKeyword(
       }
     }
 
-    if (isAddressLikeQuery(normalizedKeyword) && combined.size < fetchTarget) {
+    if (isAddressLikeQuery(normalizedKeyword) && combined.size === 0) {
       const nearbyCandidates = await searchGoogleNearbyRestaurantsAroundAddress(
         normalizedKeyword,
         fetchTarget
