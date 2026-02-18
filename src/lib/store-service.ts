@@ -128,6 +128,17 @@ function inferStoreCategoryByName(name: string): StoreCategory {
   return cafeKeywords.some((word) => text.includes(word)) ? "cafe" : "restaurant";
 }
 
+function inferQueryCategory(keyword: string): StoreCategory | null {
+  const text = keyword.toLowerCase();
+  if (["카페", "coffee", "디저트", "베이커리"].some((word) => text.includes(word))) {
+    return "cafe";
+  }
+  if (["식당", "맛집", "음식점", "레스토랑"].some((word) => text.includes(word))) {
+    return "restaurant";
+  }
+  return null;
+}
+
 function isSearchableStoreName(name: string) {
   const text = name.toLowerCase();
   const excluded = [
@@ -973,17 +984,21 @@ async function enrichStoresWithSummary(stores: StoreBase[]) {
   })) satisfies StoreWithSummary[];
 }
 
-async function findRegisteredStoresByKeyword(keyword: string, limit = 20) {
+async function findRegisteredStoresByKeyword(
+  keyword: string,
+  limit = 20,
+  categoryFilter: StoreCategory | null = null
+) {
   const sb = supabaseServer();
-  const like = `%${keyword}%`;
   const selectedFull =
     "id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count";
   const selectedNoKakao =
     "id, name, address, latitude, longitude, external_rating, external_review_count";
   const selectedMinimal = "id, name, address, external_rating, external_review_count";
 
-  async function queryBy(field: "name" | "address") {
-    const full = await sb.from("stores").select(selectedFull).ilike(field, like).limit(limit);
+  async function queryBy(field: "name" | "address", term: string, perQueryLimit: number) {
+    const like = `%${term}%`;
+    const full = await sb.from("stores").select(selectedFull).ilike(field, like).limit(perQueryLimit);
     if (!full.error) return (full.data ?? []) as Record<string, unknown>[];
     if (!isMissingColumnError(full.error)) throw new Error(full.error.message);
 
@@ -991,30 +1006,57 @@ async function findRegisteredStoresByKeyword(keyword: string, limit = 20) {
       .from("stores")
       .select(selectedNoKakao)
       .ilike(field, like)
-      .limit(limit);
+      .limit(perQueryLimit);
     if (!noKakao.error) return (noKakao.data ?? []) as Record<string, unknown>[];
     if (!isMissingColumnError(noKakao.error)) throw new Error(noKakao.error.message);
 
-    const minimal = await sb.from("stores").select(selectedMinimal).ilike(field, like).limit(limit);
+    const minimal = await sb.from("stores").select(selectedMinimal).ilike(field, like).limit(perQueryLimit);
     if (!minimal.error) return (minimal.data ?? []) as Record<string, unknown>[];
     throw new Error(minimal.error.message);
   }
 
-  const [byName, byAddress] = await Promise.all([queryBy("name"), queryBy("address")]);
+  const tokens = queryTokens(keyword);
+  const perQueryLimit = Math.max(20, Math.min(100, limit * 3));
+  const rows: Record<string, unknown>[] = [];
 
-  const rows = [
-    ...byName,
-    ...byAddress,
-  ];
+  const [byName, byAddress] = await Promise.all([
+    queryBy("name", keyword, perQueryLimit),
+    queryBy("address", keyword, perQueryLimit),
+  ]);
+  rows.push(...byName, ...byAddress);
+
+  if (rows.length < limit && tokens.length >= 2) {
+    for (const token of tokens.slice(0, 4)) {
+      const [tokenByName, tokenByAddress] = await Promise.all([
+        queryBy("name", token, perQueryLimit),
+        queryBy("address", token, perQueryLimit),
+      ]);
+      rows.push(...tokenByName, ...tokenByAddress);
+    }
+  }
   const dedup = new Map<number, StoreBase>();
   for (const row of rows) {
     const normalized = normalizeStoreRow(row);
     dedup.set(normalized.id, normalized);
   }
 
+  const minRelevance = tokens.length >= 2 ? 8 : 20;
   return Array.from(dedup.values())
     .filter((row) => isSearchableStoreName(row.name))
-    .slice(0, limit);
+    .filter((row) =>
+      categoryFilter ? inferStoreCategoryByName(row.name) === categoryFilter : true
+    )
+    .map((row) => ({
+      row,
+      relevance: queryRelevanceScore(keyword, row.name, row.address),
+    }))
+    .filter((item) => item.relevance >= minRelevance)
+    .sort((a, b) => {
+      if (b.relevance !== a.relevance) return b.relevance - a.relevance;
+      return (b.row.externalReviewCount ?? 0) - (a.row.externalReviewCount ?? 0);
+    })
+    .slice(0, limit)
+    .map((item) => item.row);
 }
 
 function distanceKm(
@@ -1031,6 +1073,56 @@ function distanceKm(
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return 6371 * c;
+}
+
+async function findGeoNearbyDuplicateStore(input: {
+  name: string;
+  latitude: number | null;
+  longitude: number | null;
+}) {
+  if (
+    typeof input.latitude !== "number" ||
+    !Number.isFinite(input.latitude) ||
+    typeof input.longitude !== "number" ||
+    !Number.isFinite(input.longitude)
+  ) {
+    return null;
+  }
+
+  const sb = supabaseServer();
+  const nearby = await sb
+    .from("stores")
+    .select("id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count")
+    .ilike("name", `%${input.name}%`)
+    .limit(80);
+
+  if (nearby.error) return null;
+  const sourceNameKey = normalizeNameKey(input.name);
+  const rows = (nearby.data ?? []) as Array<Record<string, unknown>>;
+
+  let best: StoreBase | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const row of rows) {
+    const store = normalizeStoreRow(row);
+    if (normalizeNameKey(store.name) !== sourceNameKey) continue;
+    if (
+      typeof store.latitude !== "number" ||
+      !Number.isFinite(store.latitude) ||
+      typeof store.longitude !== "number" ||
+      !Number.isFinite(store.longitude)
+    ) {
+      continue;
+    }
+
+    const dist = distanceKm(input.latitude, input.longitude, store.latitude, store.longitude);
+    if (dist > 0.08) continue;
+    if (dist < bestDistance) {
+      best = store;
+      bestDistance = dist;
+    }
+  }
+
+  return best;
 }
 
 function sortByNearest(
@@ -1509,6 +1601,41 @@ export async function createStore(input: CreateStoreInput) {
     }
     return {
       store: normalizedDuplicate,
+      created: false,
+    };
+  }
+
+  const nearbyDuplicate = await findGeoNearbyDuplicateStore({
+    name,
+    latitude,
+    longitude,
+  });
+  if (nearbyDuplicate) {
+    if (
+      (nearbyDuplicate.latitude === null || nearbyDuplicate.longitude === null) &&
+      latitude !== null &&
+      longitude !== null
+    ) {
+      const updateGeo = await sb
+        .from("stores")
+        .update({
+          latitude,
+          longitude,
+          ...(kakaoPlaceId ? { kakao_place_id: kakaoPlaceId } : {}),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", nearbyDuplicate.id)
+        .select("id, name, address, latitude, longitude, kakao_place_id, external_rating, external_review_count")
+        .single();
+      if (!updateGeo.error) {
+        return {
+          store: normalizeStoreRow(updateGeo.data as Record<string, unknown>),
+          created: false,
+        };
+      }
+    }
+    return {
+      store: nearbyDuplicate,
       created: false,
     };
   }
@@ -3019,42 +3146,12 @@ export async function searchAndAutoRegisterStoreByKeyword(
   const safeOffset = Math.max(0, Math.floor(offset));
   const safeLimit = Math.max(1, Math.min(30, Math.floor(limit)));
   const desiredCount = safeOffset + safeLimit + 1;
-  const fetchTarget = Math.max(40, desiredCount);
+  const fetchTarget = Math.max(80, Math.min(200, desiredCount * 4));
+  const categoryFilter = inferQueryCategory(normalizedKeyword);
 
-  const existing = await findRegisteredStoresByKeyword(normalizedKeyword, fetchTarget);
+  const existing = await findRegisteredStoresByKeyword(normalizedKeyword, fetchTarget, categoryFilter);
   const combined = new Map<number, StoreBase>();
   for (const store of existing) combined.set(store.id, store);
-
-  let usedGoogle = false;
-  let autoRegistered = false;
-
-  // Google Places fallback only when DB has zero matches.
-  if (combined.size === 0) {
-    const googleCandidates = await searchGooglePlacesByKeyword(normalizedKeyword, fetchTarget);
-    if (googleCandidates.length) {
-      usedGoogle = true;
-      const createdStores = await batchCreateStores(googleCandidates, 5);
-      for (const { store, created } of createdStores) {
-        if (created) autoRegistered = true;
-        combined.set(store.id, store);
-      }
-    }
-
-    if (isAddressLikeQuery(normalizedKeyword) && combined.size === 0) {
-      const nearbyCandidates = await searchGoogleNearbyRestaurantsAroundAddress(
-        normalizedKeyword,
-        fetchTarget
-      );
-      if (nearbyCandidates.length) {
-        usedGoogle = true;
-        const createdStores = await batchCreateStores(nearbyCandidates, 5);
-        for (const { store, created } of createdStores) {
-          if (created) autoRegistered = true;
-          combined.set(store.id, store);
-        }
-      }
-    }
-  }
 
   if (!combined.size) {
     return {
@@ -3074,8 +3171,8 @@ export async function searchAndAutoRegisterStoreByKeyword(
 
   return {
     stores: refreshed,
-    autoRegistered,
-    source: usedGoogle ? ("google" as const) : (null as "google" | null),
+    autoRegistered: false,
+    source: null as "google" | null,
     hasMore,
     nextOffset: hasMore ? safeOffset + safeLimit : null,
   };
