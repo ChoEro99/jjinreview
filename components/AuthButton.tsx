@@ -277,29 +277,30 @@ export default function AuthButton() {
                         variant === "center"
                           ? "translateX(-50%) scale(1)"
                           : variant === "left"
-                            ? "translateX(calc(-50% - 170px)) scale(0.9)"
-                            : "translateX(calc(-50% + 170px)) scale(0.9)";
+                            ? "translateX(calc(-50% - 220px)) scale(0.9)"
+                            : "translateX(calc(-50% + 220px)) scale(0.9)";
                       return (
                         <div
                           key={`${variant}-${review.id}`}
                           style={{
                             position: "absolute",
                             left: "50%",
-                            top: 0,
-                            width: "min(380px, 82vw)",
-                            minHeight: 290,
+                            top: isCenter ? 0 : 22,
+                            width: isCenter ? "min(380px, 82vw)" : "min(220px, 42vw)",
+                            minHeight: isCenter ? 290 : 210,
                             border: "1px solid rgba(140, 112, 81, 0.35)",
                             borderRadius: 14,
                             padding: 14,
                             background: "rgba(71, 104, 44, 0.08)",
                             transform,
-                            opacity: isCenter ? 1 : 0.52,
+                            opacity: isCenter ? 1 : 0.4,
                             boxShadow: isCenter
                               ? "0 10px 28px rgba(25, 35, 20, 0.22)"
-                              : "0 5px 14px rgba(25, 35, 20, 0.12)",
-                            zIndex: isCenter ? 3 : 2,
+                              : "0 4px 12px rgba(25, 35, 20, 0.1)",
+                            zIndex: isCenter ? 3 : 1,
                             pointerEvents: isCenter ? "auto" : "none",
                             transition: "transform 0.22s ease, opacity 0.22s ease",
+                            overflow: "hidden",
                           }}
                         >
                           <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
@@ -308,25 +309,33 @@ export default function AuthButton() {
                           <div style={{ fontSize: 14, marginBottom: 6 }}>
                             평점 {Number(review.rating).toFixed(1)}점
                           </div>
-                          <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 6 }}>
-                            {[
-                              review.food ? `음식 ${LABEL_MAP[review.food]}` : null,
-                              review.price ? `가격 ${LABEL_MAP[review.price]}` : null,
-                              review.service ? `서비스 ${LABEL_MAP[review.service]}` : null,
-                              review.space ? `공간 ${LABEL_MAP[review.space]}` : null,
-                              review.waitTime ? `대기 ${LABEL_MAP[review.waitTime]}` : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ") || "선택 항목 없음"}
-                          </div>
-                          {review.comment && (
-                            <div style={{ fontSize: 14, lineHeight: 1.45, marginBottom: 6 }}>
-                              {review.comment}
+                          {isCenter ? (
+                            <>
+                              <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 6 }}>
+                                {[
+                                  review.food ? `음식 ${LABEL_MAP[review.food]}` : null,
+                                  review.price ? `가격 ${LABEL_MAP[review.price]}` : null,
+                                  review.service ? `서비스 ${LABEL_MAP[review.service]}` : null,
+                                  review.space ? `공간 ${LABEL_MAP[review.space]}` : null,
+                                  review.waitTime ? `대기 ${LABEL_MAP[review.waitTime]}` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ") || "선택 항목 없음"}
+                              </div>
+                              {review.comment && (
+                                <div style={{ fontSize: 14, lineHeight: 1.45, marginBottom: 6 }}>
+                                  {review.comment}
+                                </div>
+                              )}
+                              <div style={{ fontSize: 12, color: "#8C7051" }}>
+                                {new Date(review.createdAt).toLocaleString("ko-KR")}
+                              </div>
+                            </>
+                          ) : (
+                            <div style={{ fontSize: 12, color: "#8C7051" }}>
+                              {new Date(review.createdAt).toLocaleDateString("ko-KR")}
                             </div>
                           )}
-                          <div style={{ fontSize: 12, color: "#8C7051" }}>
-                            {new Date(review.createdAt).toLocaleString("ko-KR")}
-                          </div>
                         </div>
                       );
                     };
@@ -340,7 +349,7 @@ export default function AuthButton() {
                         onWheel={handleMyReviewsWheel}
                         style={{
                           position: "relative",
-                          height: 330,
+                          height: 340,
                           overflow: "hidden",
                           cursor: isDraggingMyReviews ? "grabbing" : "grab",
                           userSelect: "none",
