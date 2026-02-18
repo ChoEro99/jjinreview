@@ -1171,11 +1171,18 @@ type StoreDetailSnapshot = {
     radiusKm: number;
     ratingTrustScore: {
       totalScore: number;
-      breakdown: { sampleSize: number; naturalness: number };
+      breakdown: { sampleSize: number; stability: number; freshness: number };
       label: string;
       emoji: string;
     };
   };
+  latestGoogleReviews: Array<{
+    authorName: string | null;
+    rating: number;
+    content: string;
+    publishedAt: string | null;
+    relativePublishedTime: string | null;
+  }>;
   photos: string[];
   photosFull: string[];
 };
@@ -1281,9 +1288,10 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
   );
   
   // If we have a valid cached snapshot and force sync is off, use cache.
-  if (cachedSnapshot && !forceGoogle) {
+  if (cachedSnapshot && !forceGoogle && Array.isArray(cachedSnapshot.latestGoogleReviews)) {
     return {
       ...cachedSnapshot,
+      latestGoogleReviews: cachedSnapshot.latestGoogleReviews ?? [],
       summary: {
         ...cachedSnapshot.summary,
         appAverageRating: freshSummary.appAverageRating,
@@ -1341,33 +1349,41 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     console.error("Failed to import nearby stores in background:", error);
   });
 
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  const placeForDetail = await (async () => {
+    if (!apiKey) return null;
+    try {
+      return await findGooglePlaceForStore(apiKey, {
+        name: normalizedStore.name,
+        address: normalizedStore.address,
+      });
+    } catch (error) {
+      console.error("Failed to fetch google place:", error);
+      return null;
+    }
+  })();
+
+  const latestGoogleReviews = await (async () => {
+    if (!apiKey || !placeForDetail?.id) return [] as StoreDetailSnapshot["latestGoogleReviews"];
+    try {
+      return await getLatestGoogleReviewsFromLegacy(apiKey, placeForDetail.id);
+    } catch (error) {
+      console.error("Failed to fetch latest google reviews:", error);
+      return [] as StoreDetailSnapshot["latestGoogleReviews"];
+    }
+  })();
+
   const photosResult = await (async () => {
     const photos: string[] = [];
     const photosFull: string[] = [];
-    const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
-    if (apiKey) {
-      try {
-        const place = await findGooglePlaceForStore(apiKey, {
-          name: normalizedStore.name,
-          address: normalizedStore.address,
-        });
-        
-        if (place?.photos && place.photos.length > 0) {
-          // Take up to 3 photos
-          const photoSlice = place.photos.slice(0, 3);
-          photoSlice.forEach((photo) => {
-            if (photo.name) {
-              // Thumbnail version (400x400)
-              photos.push(buildGooglePhotoUrl(photo.name, apiKey, 400, 400));
-              // Full-size version (1200x900)
-              photosFull.push(buildGooglePhotoUrl(photo.name, apiKey, 1200, 900));
-            }
-          });
+    if (apiKey && placeForDetail?.photos && placeForDetail.photos.length > 0) {
+      const photoSlice = placeForDetail.photos.slice(0, 3);
+      photoSlice.forEach((photo) => {
+        if (photo.name) {
+          photos.push(buildGooglePhotoUrl(photo.name, apiKey, 400, 400));
+          photosFull.push(buildGooglePhotoUrl(photo.name, apiKey, 1200, 900));
         }
-      } catch (error) {
-        // Gracefully handle photo fetch errors - just leave photos empty
-        console.error("Failed to fetch photos:", error);
-      }
+      });
     }
     return { photos, photosFull };
   })();
@@ -1407,7 +1423,8 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
   );
   const ratingTrustScore = computeRatingTrustScore(
     normalizedStore.externalRating,
-    normalizedStore.externalReviewCount ?? 0
+    normalizedStore.externalReviewCount ?? 0,
+    { lastSyncedAt: new Date().toISOString() }
   );
 
   // Create snapshot object (without reviews)
@@ -1425,6 +1442,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
       radiusKm: 1,
       ratingTrustScore,
     },
+    latestGoogleReviews,
     photos,
     photosFull,
   };
@@ -3539,6 +3557,58 @@ async function getGooglePlaceDetails(apiKey: string, placeResourceOrId: string) 
       },
     }
   );
+}
+
+async function getLatestGoogleReviewsFromLegacy(apiKey: string, placeId: string) {
+  const url = new URL("https://maps.googleapis.com/maps/api/place/details/json");
+  url.searchParams.set("place_id", placeId);
+  url.searchParams.set("fields", "reviews");
+  url.searchParams.set("reviews_sort", "newest");
+  url.searchParams.set("language", "ko");
+  url.searchParams.set("key", apiKey);
+
+  const response = await fetch(url.toString(), { method: "GET", cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Google Legacy Details 호출 실패: ${response.status}`);
+  }
+
+  const json = (await response.json()) as {
+    status?: string;
+    result?: {
+      reviews?: Array<{
+        rating?: number;
+        text?: string;
+        time?: number;
+        relative_time_description?: string;
+        author_name?: string;
+      }>;
+    };
+    error_message?: string;
+  };
+
+  if (json.status !== "OK" && json.status !== "ZERO_RESULTS") {
+    throw new Error(json.error_message || `Google Legacy Details 오류: ${json.status}`);
+  }
+
+  return (json.result?.reviews ?? [])
+    .slice(0, 5)
+    .map((review) => ({
+      authorName: review.author_name ?? null,
+      rating:
+        typeof review.rating === "number" && Number.isFinite(review.rating)
+          ? Math.max(1, Math.min(5, review.rating))
+          : 0,
+      content: typeof review.text === "string" ? review.text.trim() : "",
+      publishedAt:
+        typeof review.time === "number" && Number.isFinite(review.time)
+          ? new Date(review.time * 1000).toISOString()
+          : null,
+      relativePublishedTime:
+        typeof review.relative_time_description === "string"
+          ? review.relative_time_description
+          : null,
+    }))
+    .filter((review) => review.rating > 0 && review.content.length > 0);
 }
 
 async function updateStoreExternalMeta(input: {

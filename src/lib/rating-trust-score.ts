@@ -1,70 +1,65 @@
 /**
- * 평점신뢰도 점수 계산 모듈
- * 
- * 총점 = 표본 크기 점수 (최대 65점) + 분포 자연성 점수 (최대 35점)
+ * 평점 믿음 지수
+ * 총점 = 표본 신뢰(50) + 평점 안정성(35) + 최신성(15)
+ * 출처 일치도는 의도적으로 제외함.
  */
 
-/**
- * 표본 크기 점수 계산 (65점 만점)
- */
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function computeSampleSizeScore(reviewCount: number): number {
-  if (reviewCount >= 300) return 65;
-  if (reviewCount >= 200) return 55;
-  if (reviewCount >= 100) return 45;
-  if (reviewCount >= 50) return 35;
-  if (reviewCount >= 20) return 22;
-  if (reviewCount >= 10) return 12;
-  // 10개 미만: (reviewCount / 10) * 12, 최소 2
-  return Math.max(2, (reviewCount / 10) * 12);
+  if (reviewCount <= 0) return 0;
+  const raw = (Math.log10(reviewCount + 1) / Math.log10(501)) * 50;
+  return clamp(raw, 0, 50);
 }
 
 function getSampleSizeDesc(reviewCount: number): string {
-  if (reviewCount >= 300) return "리뷰가 매우 많음";
-  if (reviewCount >= 200) return "리뷰가 충분히 많음";
-  if (reviewCount >= 100) return "리뷰가 많음";
-  if (reviewCount >= 50) return "리뷰가 적당함";
-  if (reviewCount >= 20) return "리뷰가 적은 편";
-  if (reviewCount >= 10) return "리뷰가 매우 적음";
-  return "리뷰가 거의 없음";
+  if (reviewCount >= 300) return "표본이 매우 충분함";
+  if (reviewCount >= 100) return "표본이 충분한 편";
+  if (reviewCount >= 30) return "표본이 보통";
+  if (reviewCount >= 10) return "표본이 작은 편";
+  if (reviewCount > 0) return "표본이 매우 작음";
+  return "리뷰 표본 없음";
 }
 
-/**
- * 분포 자연성 점수 계산 (35점 만점)
- */
-function computeNaturalnessScore(rating: number | null, reviewCount: number): number {
-  if (rating === null) return 20;
-
-  // 별점 4.9~5.0 + 리뷰 40개 미만
-  if (rating >= 4.9 && rating <= 5.0 && reviewCount < 40) return 5;
-  
-  // 별점 4.8~4.9 + 리뷰 20개 미만
-  if (rating >= 4.8 && rating < 4.9 && reviewCount < 20) return 8;
-  
-  // 별점 4.7~4.8 + 리뷰 10개 미만
-  if (rating >= 4.7 && rating < 4.8 && reviewCount < 10) return 12;
-  
-  // 별점 3.5~4.6 (자연스러운 범위)
-  if (rating >= 3.5 && rating < 4.6) return 35;
-  
-  // 별점 4.6~4.7 + 리뷰 100개 이상
-  if (rating >= 4.6 && rating < 4.7 && reviewCount >= 100) return 30;
-  
-  // 별점 4.7+ + 리뷰 200개 이상
-  if (rating >= 4.7 && reviewCount >= 200) return 28;
-  
-  // 기타
-  return 20;
+function computeStabilityScore(rating: number | null, reviewCount: number): number {
+  if (rating === null || reviewCount <= 0) return 8;
+  const highRating = clamp((rating - 4.2) / 0.8, 0, 1);
+  const lowSamplePenalty = clamp((40 - reviewCount) / 40, 0, 1);
+  const extremePenalty = highRating * lowSamplePenalty * 25;
+  return clamp(35 - extremePenalty, 5, 35);
 }
 
-function getNaturalnessDesc(rating: number | null, reviewCount: number): string {
-  if (rating === null) return "평점 정보 없음";
-  if (rating >= 4.9 && rating <= 5.0 && reviewCount < 40) return "리뷰가 적은데 평점이 너무 높음";
-  if (rating >= 4.8 && rating < 4.9 && reviewCount < 20) return "리뷰 수 대비 평점이 높은 편";
-  if (rating >= 4.7 && rating < 4.8 && reviewCount < 10) return "리뷰 수 대비 평점이 높은 편";
-  if (rating >= 3.5 && rating < 4.6) return "평점이 자연스러운 범위";
-  if (rating >= 4.6 && rating < 4.7 && reviewCount >= 100) return "리뷰가 충분해 높은 평점도 믿을만함";
-  if (rating >= 4.7 && reviewCount >= 200) return "리뷰가 많아 높은 평점도 신뢰 가능";
-  return "평점 패턴이 다소 불규칙함";
+function getStabilityDesc(rating: number | null, reviewCount: number): string {
+  if (rating === null || reviewCount <= 0) return "평점 안정성 판단 정보 부족";
+  if (rating >= 4.8 && reviewCount < 20) return "고평점 대비 표본이 작아 변동 가능성 있음";
+  if (rating >= 4.6 && reviewCount < 40) return "고평점이나 표본이 아직 충분하지 않음";
+  return "평점 패턴이 비교적 안정적";
+}
+
+function computeFreshnessScore(lastSyncedAt?: string | null): number {
+  if (!lastSyncedAt) return 7;
+  const ts = Date.parse(lastSyncedAt);
+  if (!Number.isFinite(ts)) return 7;
+  const days = (Date.now() - ts) / (24 * 60 * 60 * 1000);
+  if (days <= 1) return 15;
+  if (days <= 3) return 13;
+  if (days <= 7) return 11;
+  if (days <= 14) return 8;
+  if (days <= 30) return 5;
+  return 2;
+}
+
+function getFreshnessDesc(lastSyncedAt?: string | null): string {
+  if (!lastSyncedAt) return "갱신 시각 정보 부족";
+  const ts = Date.parse(lastSyncedAt);
+  if (!Number.isFinite(ts)) return "갱신 시각 정보 부족";
+  const days = (Date.now() - ts) / (24 * 60 * 60 * 1000);
+  if (days <= 1) return "매우 최근에 갱신됨";
+  if (days <= 7) return "최근 1주 내 갱신됨";
+  if (days <= 30) return "최근 1개월 내 갱신됨";
+  return "갱신된 지 오래됨";
 }
 
 /**
@@ -87,25 +82,36 @@ function getLabelAndEmoji(totalScore: number): { label: string; emoji: string } 
  */
 export function computeRatingTrustScore(
   rating: number | null,
-  reviewCount: number
+  reviewCount: number,
+  options?: { lastSyncedAt?: string | null }
 ): {
   totalScore: number;
-  breakdown: { sampleSize: number; naturalness: number; sampleSizeDesc: string; naturalnessDesc: string };
+  breakdown: {
+    sampleSize: number;
+    stability: number;
+    freshness: number;
+    sampleSizeDesc: string;
+    stabilityDesc: string;
+    freshnessDesc: string;
+  };
   label: string;
   emoji: string;
 } {
   const sampleSize = computeSampleSizeScore(reviewCount);
-  const naturalness = computeNaturalnessScore(rating, reviewCount);
-  const totalScore = Math.round(sampleSize + naturalness);
+  const stability = computeStabilityScore(rating, reviewCount);
+  const freshness = computeFreshnessScore(options?.lastSyncedAt);
+  const totalScore = Math.round(sampleSize + stability + freshness);
   const { label, emoji } = getLabelAndEmoji(totalScore);
 
   return {
     totalScore,
     breakdown: {
       sampleSize: Math.round(sampleSize),
-      naturalness: Math.round(naturalness),
+      stability: Math.round(stability),
+      freshness: Math.round(freshness),
       sampleSizeDesc: getSampleSizeDesc(reviewCount),
-      naturalnessDesc: getNaturalnessDesc(rating, reviewCount),
+      stabilityDesc: getStabilityDesc(rating, reviewCount),
+      freshnessDesc: getFreshnessDesc(options?.lastSyncedAt),
     },
     label,
     emoji,

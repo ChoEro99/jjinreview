@@ -61,13 +61,27 @@ interface StoreDetail {
     }>;
     ratingTrustScore?: {
       totalScore: number;
-      breakdown: { sampleSize: number; naturalness: number; sampleSizeDesc: string; naturalnessDesc: string };
+      breakdown: {
+        sampleSize: number;
+        stability: number;
+        freshness: number;
+        sampleSizeDesc: string;
+        stabilityDesc: string;
+        freshnessDesc: string;
+      };
       label: string;
       emoji: string;
     };
     rating: number | null;
     reviewCount: number;
   };
+  latestGoogleReviews?: Array<{
+    authorName: string | null;
+    rating: number;
+    content: string;
+    publishedAt: string | null;
+    relativePublishedTime: string | null;
+  }>;
   reviews: Array<{
     source: string;
     id: string;
@@ -676,7 +690,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                           </div>
                           {detailReviewCount > 0 && (
                             <div style={{ fontSize: 13, color: "#8C7051", marginTop: 4 }}>
-                              📊 {breakdown.sampleSizeDesc} (표본 {breakdown.sampleSize}점) · {breakdown.naturalnessDesc} (자연스러움 {breakdown.naturalness}점)
+                              📊 {breakdown.sampleSizeDesc} (표본 {breakdown.sampleSize}점) · {breakdown.stabilityDesc} (안정성 {breakdown.stability}점) · {breakdown.freshnessDesc} (최신성 {breakdown.freshness}점)
                             </div>
                           )}
                         </div>
@@ -943,6 +957,49 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 }}
               >
                 광고 영역 (가게 상세 요약 하단) · 슬롯 ID 입력 후 활성화
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
+                  구글 최신 리뷰 5개
+                </h3>
+                {storeDetail.latestGoogleReviews && storeDetail.latestGoogleReviews.length > 0 ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {storeDetail.latestGoogleReviews.map((review, idx) => (
+                      <div
+                        key={`${review.publishedAt ?? "no-date"}-${idx}`}
+                        style={{
+                          border: "1px solid rgba(140, 112, 81, 0.3)",
+                          borderRadius: 12,
+                          padding: 12,
+                          background: "rgba(140, 112, 81, 0.06)",
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 13, color: "#28502E", marginBottom: 6 }}>
+                          <strong>{review.rating.toFixed(1)}점</strong>
+                          <span>{review.authorName ?? "익명"}</span>
+                          <span style={{ color: "#8C7051" }}>
+                            {review.relativePublishedTime ?? (review.publishedAt ? new Date(review.publishedAt).toLocaleDateString("ko-KR") : "-")}
+                          </span>
+                        </div>
+                        <div style={{ color: "#28502E", lineHeight: 1.45, fontSize: 14 }}>
+                          {review.content}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{
+                    border: "1px solid rgba(140, 112, 81, 0.3)",
+                    borderRadius: 12,
+                    padding: 16,
+                    color: "#8C7051",
+                    background: "rgba(140, 112, 81, 0.06)",
+                    fontSize: 14,
+                  }}>
+                    최신 구글 리뷰를 불러오지 못했거나 공개된 리뷰가 없습니다.
+                  </div>
+                )}
               </div>
 
               <div style={{ marginBottom: 24 }}>
