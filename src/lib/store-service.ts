@@ -1255,7 +1255,7 @@ async function saveStoreDetailSnapshot(storeId: number, snapshot: StoreDetailSna
 }
 
 export async function getStoreDetail(id: number, options?: { forceGoogle?: boolean }) {
-  const forceGoogle = options?.forceGoogle !== false;
+  const forceGoogle = options?.forceGoogle === true;
   // Try to get cached snapshot first
   const cachedSnapshot = await getStoreDetailSnapshot(id);
   

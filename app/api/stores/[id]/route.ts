@@ -7,7 +7,7 @@ export async function GET(
 ) {
   try {
     const url = new URL(req.url);
-    const forceGoogle = url.searchParams.get("google") !== "0";
+    const forceGoogle = url.searchParams.get("google") === "1";
     const params = await context.params;
     const storeId = Number(params.id);
     if (!storeId) {
