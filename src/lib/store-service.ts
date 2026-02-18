@@ -1240,40 +1240,41 @@ export async function getStoreDetail(id: number) {
     normalizedStore = normalizedStoreRaw;
   }
   
-  // Parallelize independent tasks
-  const [, photosResult] = await Promise.all([
-    importNearbyRestaurantsForStore(normalizedStore).catch(() => null),
-    (async () => {
-      const photos: string[] = [];
-      const photosFull: string[] = [];
-      const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
-      if (apiKey) {
-        try {
-          const place = await findGooglePlaceForStore(apiKey, {
-            name: normalizedStore.name,
-            address: normalizedStore.address,
+  // Do heavy nearby import in background so detail response is fast.
+  importNearbyRestaurantsForStore(normalizedStore).catch((error) => {
+    console.error("Failed to import nearby stores in background:", error);
+  });
+
+  const photosResult = await (async () => {
+    const photos: string[] = [];
+    const photosFull: string[] = [];
+    const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+    if (apiKey) {
+      try {
+        const place = await findGooglePlaceForStore(apiKey, {
+          name: normalizedStore.name,
+          address: normalizedStore.address,
+        });
+        
+        if (place?.photos && place.photos.length > 0) {
+          // Take up to 3 photos
+          const photoSlice = place.photos.slice(0, 3);
+          photoSlice.forEach((photo) => {
+            if (photo.name) {
+              // Thumbnail version (400x400)
+              photos.push(buildGooglePhotoUrl(photo.name, apiKey, 400, 400));
+              // Full-size version (1200x900)
+              photosFull.push(buildGooglePhotoUrl(photo.name, apiKey, 1200, 900));
+            }
           });
-          
-          if (place?.photos && place.photos.length > 0) {
-            // Take up to 3 photos
-            const photoSlice = place.photos.slice(0, 3);
-            photoSlice.forEach((photo) => {
-              if (photo.name) {
-                // Thumbnail version (400x400)
-                photos.push(buildGooglePhotoUrl(photo.name, apiKey, 400, 400));
-                // Full-size version (1200x900)
-                photosFull.push(buildGooglePhotoUrl(photo.name, apiKey, 1200, 900));
-              }
-            });
-          }
-        } catch (error) {
-          // Gracefully handle photo fetch errors - just leave photos empty
-          console.error("Failed to fetch photos:", error);
         }
+      } catch (error) {
+        // Gracefully handle photo fetch errors - just leave photos empty
+        console.error("Failed to fetch photos:", error);
       }
-      return { photos, photosFull };
-    })(),
-  ]);
+    }
+    return { photos, photosFull };
+  })();
 
   const photos = photosResult.photos;
   const photosFull = photosResult.photosFull;
