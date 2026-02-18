@@ -1329,6 +1329,36 @@ async function saveStoreDetailSnapshot(storeId: number, snapshot: StoreDetailSna
   }
 }
 
+function getLatestReviewWrittenAt(
+  latestGoogleReviews: Array<{ publishedAt: string | null }> | undefined,
+  reviews: Array<{ source: string; createdAt: string }>
+) {
+  let latestTs: number | null = null;
+  let latestIso: string | null = null;
+
+  for (const review of latestGoogleReviews ?? []) {
+    if (!review.publishedAt) continue;
+    const ts = Date.parse(review.publishedAt);
+    if (!Number.isFinite(ts)) continue;
+    if (latestTs === null || ts > latestTs) {
+      latestTs = ts;
+      latestIso = new Date(ts).toISOString();
+    }
+  }
+
+  for (const review of reviews) {
+    if (review.source !== "external") continue;
+    const ts = Date.parse(review.createdAt);
+    if (!Number.isFinite(ts)) continue;
+    if (latestTs === null || ts > latestTs) {
+      latestTs = ts;
+      latestIso = new Date(ts).toISOString();
+    }
+  }
+
+  return latestIso;
+}
+
 export async function getStoreDetail(id: number, options?: { forceGoogle?: boolean }) {
   const forceGoogle = options?.forceGoogle === true;
   // Try to get cached snapshot first
@@ -1365,10 +1395,11 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
             address: cachedSnapshot.store.address,
             fallback: cachedSnapshot.latestGoogleReviews,
           });
+    const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
     const normalizedTrustScore = computeRatingTrustScore(
       cachedSnapshot.store.externalRating,
       cachedSnapshot.store.externalReviewCount ?? 0,
-      { lastSyncedAt: new Date().toISOString() }
+      { latestReviewAt }
     );
     return {
       ...cachedSnapshot,
@@ -1452,6 +1483,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     name: normalizedStore.name,
     address: normalizedStore.address,
   });
+  const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
 
   const photosResult = await (async () => {
     const photos: string[] = [];
@@ -1504,7 +1536,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
   const ratingTrustScore = computeRatingTrustScore(
     normalizedStore.externalRating,
     normalizedStore.externalReviewCount ?? 0,
-    { lastSyncedAt: new Date().toISOString() }
+    { latestReviewAt }
   );
 
   // Create snapshot object (without reviews)

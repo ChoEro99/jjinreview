@@ -38,9 +38,9 @@ function getStabilityDesc(rating: number | null, reviewCount: number): string {
   return "평점 패턴이 비교적 안정적";
 }
 
-function computeFreshnessScore(lastSyncedAt?: string | null): number {
-  if (!lastSyncedAt) return 10;
-  const ts = Date.parse(lastSyncedAt);
+function computeFreshnessScore(latestReviewAt?: string | null): number {
+  if (!latestReviewAt) return 10;
+  const ts = Date.parse(latestReviewAt);
   if (!Number.isFinite(ts)) return 10;
   const days = (Date.now() - ts) / (24 * 60 * 60 * 1000);
   if (days <= 1) return 25;
@@ -51,15 +51,15 @@ function computeFreshnessScore(lastSyncedAt?: string | null): number {
   return 4;
 }
 
-function getFreshnessDesc(lastSyncedAt?: string | null): string {
-  if (!lastSyncedAt) return "갱신 시각 정보 부족";
-  const ts = Date.parse(lastSyncedAt);
-  if (!Number.isFinite(ts)) return "갱신 시각 정보 부족";
+function getFreshnessDesc(latestReviewAt?: string | null): string {
+  if (!latestReviewAt) return "최신 리뷰 작성일 정보 부족";
+  const ts = Date.parse(latestReviewAt);
+  if (!Number.isFinite(ts)) return "최신 리뷰 작성일 정보 부족";
   const days = (Date.now() - ts) / (24 * 60 * 60 * 1000);
-  if (days <= 1) return "매우 최근에 갱신됨";
-  if (days <= 7) return "최근 1주 내 갱신됨";
-  if (days <= 30) return "최근 1개월 내 갱신됨";
-  return "갱신된 지 오래됨";
+  if (days <= 1) return "최신 리뷰가 매우 최근에 작성됨";
+  if (days <= 7) return "최신 리뷰가 최근 1주 내 작성됨";
+  if (days <= 30) return "최신 리뷰가 최근 1개월 내 작성됨";
+  return "최신 리뷰 작성 시점이 오래됨";
 }
 
 function getComponentEmoji(score: number, maxScore: number): string {
@@ -92,7 +92,7 @@ function getLabelAndEmoji(totalScore: number): { label: string; emoji: string } 
 export function computeRatingTrustScore(
   rating: number | null,
   reviewCount: number,
-  options?: { lastSyncedAt?: string | null }
+  options?: { latestReviewAt?: string | null; lastSyncedAt?: string | null }
 ): {
   totalScore: number;
   breakdown: {
@@ -111,7 +111,8 @@ export function computeRatingTrustScore(
 } {
   const sampleSize = computeSampleSizeScore(reviewCount);
   const stability = computeStabilityScore(rating, reviewCount);
-  const freshness = computeFreshnessScore(options?.lastSyncedAt);
+  const freshnessRef = options?.latestReviewAt ?? options?.lastSyncedAt;
+  const freshness = computeFreshnessScore(freshnessRef);
   const totalScore = Math.round(sampleSize + stability + freshness);
   const { label, emoji } = getLabelAndEmoji(totalScore);
 
@@ -126,7 +127,7 @@ export function computeRatingTrustScore(
       freshnessEmoji: getComponentEmoji(freshness, 25),
       sampleSizeDesc: getSampleSizeDesc(reviewCount),
       stabilityDesc: getStabilityDesc(rating, reviewCount),
-      freshnessDesc: getFreshnessDesc(options?.lastSyncedAt),
+      freshnessDesc: getFreshnessDesc(freshnessRef),
     },
     label,
     emoji,
