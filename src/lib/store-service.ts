@@ -1254,7 +1254,8 @@ async function saveStoreDetailSnapshot(storeId: number, snapshot: StoreDetailSna
   }
 }
 
-export async function getStoreDetail(id: number) {
+export async function getStoreDetail(id: number, options?: { forceGoogle?: boolean }) {
+  const forceGoogle = options?.forceGoogle !== false;
   // Try to get cached snapshot first
   const cachedSnapshot = await getStoreDetailSnapshot(id);
   
@@ -1279,8 +1280,8 @@ export async function getStoreDetail(id: number) {
     cachedSnapshot?.store.externalReviewCount ?? 0
   );
   
-  // If we have a valid cached snapshot, use it and return early
-  if (cachedSnapshot) {
+  // If we have a valid cached snapshot and force sync is off, use cache.
+  if (cachedSnapshot && !forceGoogle) {
     return {
       ...cachedSnapshot,
       summary: {
@@ -1320,7 +1321,7 @@ export async function getStoreDetail(id: number) {
   // Try to refresh external snapshot, fallback to existing data on error
   let normalizedStoreRaw: StoreBase;
   try {
-    normalizedStoreRaw = await refreshStoreExternalSnapshotIfStale(id);
+    normalizedStoreRaw = await refreshStoreExternalSnapshotIfStale(id, { force: forceGoogle });
   } catch (error) {
     console.error("Failed to refresh external snapshot, using existing data:", error);
     normalizedStoreRaw = normalizeStoreRow(storeData);
@@ -2268,8 +2269,12 @@ function reliabilityLabelBySnapshot(rating: number | null, reviewCount: number) 
   return "표본 부족";
 }
 
-async function refreshStoreExternalSnapshotIfStale(storeId: number) {
+async function refreshStoreExternalSnapshotIfStale(
+  storeId: number,
+  options?: { force?: boolean }
+) {
   const STORE_REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7일
+  const force = options?.force === true;
 
   const sb = supabaseServer();
   const currentFull = await sb
@@ -2313,7 +2318,7 @@ async function refreshStoreExternalSnapshotIfStale(storeId: number) {
   const age = Date.now() - updatedAt;
   const isStale = !Number.isFinite(age) || age < 0 || age > STORE_REFRESH_TTL_MS;
   
-  if (hasExternal && (hasGeo || geoColumnMissing) && !isStale) {
+  if (!force && hasExternal && (hasGeo || geoColumnMissing) && !isStale) {
     return normalizeStoreRow(row);
   }
 
