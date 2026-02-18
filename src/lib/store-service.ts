@@ -887,8 +887,6 @@ function sortByNearest(
 
 // Snapshot TTL in days
 const SNAPSHOT_TTL_DAYS = 7;
-const snapshotDeletionLocks = new Set<number>();
-const SNAPSHOT_DELETION_LOCK_TTL_MS = 30_000;
 
 type StoreDetailSnapshot = {
   store: StoreBase;
@@ -924,8 +922,7 @@ type StoreDetailSnapshot = {
 async function deleteExpiredSnapshotAsync(
   sb: ReturnType<typeof supabaseServer>,
   storeId: number,
-  now: Date,
-  lockTimeout: ReturnType<typeof setTimeout>
+  now: Date
 ) {
   try {
     const { error } = await sb
@@ -939,9 +936,6 @@ async function deleteExpiredSnapshotAsync(
       `Error deleting expired snapshot for store ${storeId} (will retry on next request):`,
       error
     );
-  } finally {
-    clearTimeout(lockTimeout);
-    snapshotDeletionLocks.delete(storeId);
   }
 }
 
@@ -965,13 +959,7 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
     
     if (now > expiresAt) {
       // Snapshot expired, return null to trigger recalculation
-      if (!snapshotDeletionLocks.has(storeId)) {
-        snapshotDeletionLocks.add(storeId);
-        const lockTimeout = setTimeout(() => {
-          snapshotDeletionLocks.delete(storeId);
-        }, SNAPSHOT_DELETION_LOCK_TTL_MS);
-        void deleteExpiredSnapshotAsync(sb, storeId, now, lockTimeout);
-      }
+      void deleteExpiredSnapshotAsync(sb, storeId, now);
       return null;
     }
     
