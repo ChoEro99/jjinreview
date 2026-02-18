@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
     const recommendations = await getNearbyRecommendedStoresByLocation(
       { latitude, longitude },
-      { limit: typeof body.limit === "number" ? body.limit : 5 }
+      { limit: typeof body.limit === "number" ? body.limit : 10 }
     );
 
     return NextResponse.json({
@@ -37,4 +37,3 @@ export async function POST(req: Request) {
     );
   }
 }
-

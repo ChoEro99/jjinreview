@@ -3231,7 +3231,7 @@ export async function getNearbyRecommendedStoresByLocation(
   const limit =
     typeof options?.limit === "number" && Number.isFinite(options.limit)
       ? Math.max(1, Math.min(10, Math.floor(options.limit)))
-      : 5;
+      : 10;
   const minDbCount =
     typeof options?.minDbCount === "number" && Number.isFinite(options.minDbCount)
       ? Math.max(1, Math.min(20, Math.floor(options.minDbCount)))

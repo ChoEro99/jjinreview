@@ -194,6 +194,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [nearbyRecommendations, setNearbyRecommendations] = useState<NearbyRecommendation[]>([]);
+  const hasAttemptedNearbyAutoLoadRef = useRef(false);
   
   // Cache for store details to avoid re-fetching
   const storeDetailCache = useRef<Map<number, StoreDetail>>(new Map());
@@ -605,7 +606,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               body: JSON.stringify({
                 latitude: coords.latitude,
                 longitude: coords.longitude,
-                limit: 5,
+                limit: 10,
               }),
             });
             if (!response.ok) throw new Error("nearby api failed");
@@ -667,6 +668,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60_000 }
     );
   }, []);
+
+  useEffect(() => {
+    if (hasAttemptedNearbyAutoLoadRef.current) return;
+    hasAttemptedNearbyAutoLoadRef.current = true;
+    handleLocateAndRecommend();
+  }, [handleLocateAndRecommend]);
 
   // Calculate combined ad risk probability from individual risk scores
   const calculateCombinedAdRisk = (adRisk: number, undisclosedAdRisk: number): number => {
@@ -766,24 +773,14 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 background: "rgba(71, 104, 44, 0.08)",
               }}
             >
-              <button
-                type="button"
-                onClick={handleLocateAndRecommend}
-                disabled={isLocating}
-                style={{
-                  width: "100%",
-                  padding: isMobile ? "10px 12px" : "11px 13px",
-                  borderRadius: 8,
-                  border: "1px solid rgba(40, 80, 46, 0.45)",
-                  background: isLocating ? "rgba(140, 112, 81, 0.24)" : "#47682C",
-                  color: "#ffffff",
-                  fontSize: isMobile ? 13 : 14,
-                  fontWeight: 700,
-                  cursor: isLocating ? "not-allowed" : "pointer",
-                }}
-              >
-                {isLocating ? "위치 확인 중..." : "내 주변 추천 보기"}
-              </button>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#28502E" }}>
+                내 주변 추천
+              </div>
+              {isLocating && (
+                <div style={{ marginTop: 6, fontSize: 12, color: "#8C7051" }}>
+                  위치 확인 중...
+                </div>
+              )}
 
               {locationError && (
                 <div style={{ marginTop: 8, fontSize: 12, color: "#7A2A19" }}>{locationError}</div>
@@ -792,7 +789,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               {nearbyRecommendations.length > 0 && (
                 <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#28502E" }}>
-                    가까운 가게 중 평점/믿음지수 추천
+                    가까운 가게 중 평점/믿음지수 추천 TOP 10
                   </div>
                   {nearbyRecommendations.map((item, idx) => (
                     <button
