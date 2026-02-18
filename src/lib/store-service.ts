@@ -921,6 +921,30 @@ type StoreDetailSnapshot = {
   photosFull: string[];
 };
 
+async function deleteExpiredSnapshotAsync(
+  sb: ReturnType<typeof supabaseServer>,
+  storeId: number,
+  now: Date,
+  lockTimeout: ReturnType<typeof setTimeout>
+) {
+  try {
+    const { error } = await sb
+      .from("store_detail_snapshots")
+      .delete()
+      .eq("store_id", storeId)
+      .lte("expires_at", now.toISOString());
+    if (error) throw error;
+  } catch (error) {
+    console.error(
+      `Error deleting expired snapshot for store ${storeId} (will retry on next request):`,
+      error
+    );
+  } finally {
+    clearTimeout(lockTimeout);
+    snapshotDeletionLocks.delete(storeId);
+  }
+}
+
 async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnapshot | null> {
   const sb = supabaseServer();
   
@@ -946,24 +970,7 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
         const lockTimeout = setTimeout(() => {
           snapshotDeletionLocks.delete(storeId);
         }, SNAPSHOT_DELETION_LOCK_TTL_MS);
-        void (async () => {
-          try {
-            const { error } = await sb
-              .from("store_detail_snapshots")
-              .delete()
-              .eq("store_id", storeId)
-              .lte("expires_at", now.toISOString());
-            if (error) throw error;
-          } catch (error) {
-            console.error(
-              `Error deleting expired snapshot for store ${storeId} (will retry on next request):`,
-              error
-            );
-          } finally {
-            clearTimeout(lockTimeout);
-            snapshotDeletionLocks.delete(storeId);
-          }
-        })();
+        void deleteExpiredSnapshotAsync(sb, storeId, now, lockTimeout);
       }
       return null;
     }
