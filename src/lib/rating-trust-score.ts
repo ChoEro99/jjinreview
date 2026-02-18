@@ -50,11 +50,11 @@ function computeNaturalnessScore(rating: number | null, reviewCount: number): nu
  * 점수에 따른 라벨과 이모지 반환
  */
 function getLabelAndEmoji(totalScore: number): { label: string; emoji: string } {
-  if (totalScore >= 85) return { label: "매우 신뢰", emoji: "🟢" };
-  if (totalScore >= 70) return { label: "신뢰 가능", emoji: "🔵" };
-  if (totalScore >= 55) return { label: "보통", emoji: "🟡" };
-  if (totalScore >= 40) return { label: "주의 필요", emoji: "🟠" };
-  return { label: "신뢰 어려움", emoji: "🔴" };
+  if (totalScore >= 85) return { label: "확실함", emoji: "🟢" };
+  if (totalScore >= 70) return { label: "믿을 만함", emoji: "🔵" };
+  if (totalScore >= 55) return { label: "참고용", emoji: "🟡" };
+  if (totalScore >= 40) return { label: "의심됨", emoji: "🟠" };
+  return { label: "믿기 어려움", emoji: "🔴" };
 }
 
 /**
