@@ -9,6 +9,7 @@ interface UserReviewFormProps {
 }
 
 type OptionValue = "good" | "normal" | "bad" | "expensive" | "cheap" | "enough" | "narrow" | "short" | "long" | null;
+const STAR_ACTIVE_COLOR = "#47682C";
 
 export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormProps) {
   const { data: session } = useSession();
@@ -210,7 +211,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
                     position: "absolute",
                     top: 0,
                     left: 0,
-                    color: "#FFB800",
+                    color: STAR_ACTIVE_COLOR,
                     overflow: "hidden",
                     width: filled ? "100%" : half ? "50%" : "0%",
                   }}

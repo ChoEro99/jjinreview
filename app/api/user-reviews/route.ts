@@ -6,7 +6,8 @@ import { authOptions } from "../auth/[...nextauth]/route";
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    const userId = session?.user ? (session.user as { id?: string }).id : null;
+    const sessionUser = session?.user as { id?: string; email?: string | null; name?: string | null; image?: string | null } | undefined;
+    const userId = sessionUser?.id ?? null;
 
     // Require login
     if (!userId) {
@@ -36,6 +37,26 @@ export async function POST(req: Request) {
     }
 
     const supabase = supabaseServer();
+
+    // Ensure users row exists before inserting into user_reviews(user_id FK -> users.id).
+    const { error: upsertUserError } = await supabase.from("users").upsert(
+      {
+        id: userId,
+        email: sessionUser?.email ?? null,
+        name: sessionUser?.name ?? null,
+        image: sessionUser?.image ?? null,
+        provider: "google",
+      },
+      { onConflict: "id" }
+    );
+
+    if (upsertUserError) {
+      console.error("User upsert error:", upsertUserError);
+      return NextResponse.json(
+        { ok: false, error: "사용자 정보 동기화 중 오류가 발생했습니다." },
+        { status: 500 }
+      );
+    }
 
     // Check for existing review within 7 days (user_id only)
     const sevenDaysAgo = new Date();
