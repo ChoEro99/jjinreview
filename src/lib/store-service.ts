@@ -1057,44 +1057,45 @@ async function findRegisteredStoresByKeyword(
     "id, name, address, latitude, longitude, external_rating, external_review_count";
   const selectedMinimal = "id, name, address, external_rating, external_review_count";
 
-  async function queryBy(field: "name" | "address", term: string, perQueryLimit: number) {
-    const like = `%${term}%`;
-    const full = await sb.from("stores").select(selectedFull).ilike(field, like).limit(perQueryLimit);
+  async function queryByAny(terms: string[], perQueryLimit: number) {
+    const sanitized = Array.from(
+      new Set(
+        terms
+          .map((term) => term.replace(/,/g, " ").trim())
+          .filter((term) => term.length >= 2)
+      )
+    ).slice(0, 6);
+    if (!sanitized.length) return [] as Record<string, unknown>[];
+
+    const filters = sanitized
+      .flatMap((term) => [`name.ilike.%${term}%`, `address.ilike.%${term}%`])
+      .join(",");
+
+    const full = await sb.from("stores").select(selectedFull).or(filters).limit(perQueryLimit);
     if (!full.error) return (full.data ?? []) as Record<string, unknown>[];
     if (!isMissingColumnError(full.error)) throw new Error(full.error.message);
 
     const noKakao = await sb
       .from("stores")
       .select(selectedNoKakao)
-      .ilike(field, like)
+      .or(filters)
       .limit(perQueryLimit);
     if (!noKakao.error) return (noKakao.data ?? []) as Record<string, unknown>[];
     if (!isMissingColumnError(noKakao.error)) throw new Error(noKakao.error.message);
 
-    const minimal = await sb.from("stores").select(selectedMinimal).ilike(field, like).limit(perQueryLimit);
+    const minimal = await sb
+      .from("stores")
+      .select(selectedMinimal)
+      .or(filters)
+      .limit(perQueryLimit);
     if (!minimal.error) return (minimal.data ?? []) as Record<string, unknown>[];
     throw new Error(minimal.error.message);
   }
 
   const tokens = queryTokens(keyword);
   const perQueryLimit = Math.max(20, Math.min(100, limit * 3));
-  const rows: Record<string, unknown>[] = [];
-
-  const [byName, byAddress] = await Promise.all([
-    queryBy("name", keyword, perQueryLimit),
-    queryBy("address", keyword, perQueryLimit),
-  ]);
-  rows.push(...byName, ...byAddress);
-
-  if (rows.length < limit && tokens.length >= 2) {
-    for (const token of tokens.slice(0, 4)) {
-      const [tokenByName, tokenByAddress] = await Promise.all([
-        queryBy("name", token, perQueryLimit),
-        queryBy("address", token, perQueryLimit),
-      ]);
-      rows.push(...tokenByName, ...tokenByAddress);
-    }
-  }
+  const queryTerms = [keyword, ...tokens.slice(0, 4)];
+  const rows = await queryByAny(queryTerms, perQueryLimit);
   const dedup = new Map<number, StoreBase>();
   for (const row of rows) {
     const normalized = normalizeStoreRow(row);
