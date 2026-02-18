@@ -504,10 +504,6 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               </button>
             </form>
 
-            <div style={{ fontSize: 14, color: "#8C7051", marginBottom: 12 }}>
-              총 {stores.length}개 가게
-            </div>
-
             <div
               ref={storeListRef}
               className="hide-scrollbar"
