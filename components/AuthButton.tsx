@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 
 const MAX_DISPLAY_NAME_LENGTH = 10;
@@ -35,6 +35,7 @@ const LABEL_MAP: Record<Exclude<OptionValue, null>, string> = {
 
 export default function AuthButton() {
   const { data: session } = useSession();
+  const [isMobile, setIsMobile] = useState(false);
   const [myReviewsOpen, setMyReviewsOpen] = useState(false);
   const [myReviews, setMyReviews] = useState<MyReview[]>([]);
   const [myReviewsIndex, setMyReviewsIndex] = useState(0);
@@ -51,6 +52,15 @@ export default function AuthButton() {
     moved: false,
   });
   const wheelLockRef = useRef(false);
+
+  useEffect(() => {
+    const onResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const openMyReviews = async () => {
     setMyReviewsOpen(true);
@@ -122,6 +132,31 @@ export default function AuthButton() {
     setIsDraggingMyReviews(false);
   };
 
+  const handleMyReviewsTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length !== 1) return;
+    dragRef.current = {
+      isDragging: true,
+      startX: e.touches[0].clientX,
+      moved: false,
+    };
+    setIsDraggingMyReviews(true);
+  };
+
+  const handleMyReviewsTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!dragRef.current.isDragging || e.touches.length !== 1) return;
+    const deltaX = e.touches[0].clientX - dragRef.current.startX;
+    if (Math.abs(deltaX) < 45) return;
+    dragRef.current.moved = true;
+    dragRef.current.startX = e.touches[0].clientX;
+    moveReviewIndex(deltaX > 0 ? -1 : 1);
+  };
+
+  const handleMyReviewsTouchEnd = () => {
+    if (!dragRef.current.isDragging) return;
+    dragRef.current.isDragging = false;
+    setIsDraggingMyReviews(false);
+  };
+
   const handleMyReviewsWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     if (myReviews.length <= 1) return;
     const dominantDelta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
@@ -155,30 +190,32 @@ export default function AuthButton() {
   if (session?.user) {
     // Logged in state
     const displayName = session.user.name || session.user.email || "User";
-    const truncatedName = displayName.length > MAX_DISPLAY_NAME_LENGTH 
-      ? displayName.slice(0, MAX_DISPLAY_NAME_LENGTH) + "..." 
+    const maxNameLength = isMobile ? 8 : MAX_DISPLAY_NAME_LENGTH;
+    const truncatedName = displayName.length > maxNameLength
+      ? displayName.slice(0, maxNameLength) + "..."
       : displayName;
 
     return (
       <div
         style={{
           position: "fixed",
-          top: 16,
-          right: 16,
+          top: isMobile ? 10 : 16,
+          right: isMobile ? 10 : 16,
           zIndex: 1000,
           display: "flex",
           alignItems: "center",
-          gap: 8,
+          gap: isMobile ? 6 : 8,
+          maxWidth: isMobile ? "92vw" : "none",
         }}
       >
         <span
           style={{
             background: "rgba(255,255,255,0.9)",
             borderRadius: 6,
-            padding: "4px 8px",
+            padding: isMobile ? "3px 6px" : "4px 8px",
             color: "#28502E",
             fontWeight: 600,
-            fontSize: 13,
+            fontSize: isMobile ? 12 : 13,
             boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
           }}
         >
@@ -192,8 +229,8 @@ export default function AuthButton() {
             border: "1px solid #47682C",
             borderRadius: 8,
             boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            padding: "8px 12px",
-            fontSize: 13,
+            padding: isMobile ? "7px 10px" : "8px 12px",
+            fontSize: isMobile ? 12 : 13,
             fontWeight: 600,
             cursor: "pointer",
             transition: "all 0.2s",
@@ -217,8 +254,8 @@ export default function AuthButton() {
             border: "1px solid #28502E",
             borderRadius: 8,
             boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            padding: "8px 16px",
-            fontSize: 13,
+            padding: isMobile ? "7px 12px" : "8px 16px",
+            fontSize: isMobile ? 12 : 13,
             fontWeight: 600,
             cursor: "pointer",
             transition: "all 0.2s",
@@ -248,7 +285,7 @@ export default function AuthButton() {
               alignItems: "center",
               justifyContent: "center",
               zIndex: 1200,
-              padding: 20,
+              padding: isMobile ? 12 : 20,
             }}
           >
             <div
@@ -258,7 +295,7 @@ export default function AuthButton() {
                 borderRadius: 14,
                 border: "1px solid rgba(140, 112, 81, 0.45)",
                 background: "#f6f4ef",
-                padding: 18,
+                padding: isMobile ? 14 : 18,
                 color: "#28502E",
               }}
             >
@@ -304,6 +341,7 @@ export default function AuthButton() {
                       variant: "center" | "left" | "right"
                     ) => {
                       const isCenter = variant === "center";
+                      const showStack = !isMobile && myReviews.length > 1;
                       const transform =
                         variant === "center"
                           ? "translateX(-50%) scale(1)"
@@ -316,15 +354,15 @@ export default function AuthButton() {
                           style={{
                             position: "absolute",
                             left: "50%",
-                            top: isCenter ? 0 : 22,
-                            width: isCenter ? "min(380px, 82vw)" : "min(220px, 42vw)",
-                            minHeight: isCenter ? 290 : 210,
+                            top: isCenter || isMobile ? 0 : 22,
+                            width: isCenter || isMobile ? "min(420px, 100%)" : "min(220px, 42vw)",
+                            minHeight: isCenter ? (isMobile ? 250 : 290) : 210,
                             border: "1px solid rgba(140, 112, 81, 0.35)",
                             borderRadius: 14,
                             padding: 14,
                             background: isCenter ? "#f6f4ef" : "rgba(71, 104, 44, 0.08)",
                             transform,
-                            opacity: isCenter ? 1 : 0.4,
+                            opacity: isCenter ? 1 : showStack ? 0.4 : 0,
                             boxShadow: isCenter
                               ? "0 10px 28px rgba(25, 35, 20, 0.22)"
                               : "0 4px 12px rgba(25, 35, 20, 0.1)",
@@ -394,26 +432,30 @@ export default function AuthButton() {
                         onMouseMove={handleMyReviewsMouseMove}
                         onMouseUp={handleMyReviewsMouseUpOrLeave}
                         onMouseLeave={handleMyReviewsMouseUpOrLeave}
+                        onTouchStart={handleMyReviewsTouchStart}
+                        onTouchMove={handleMyReviewsTouchMove}
+                        onTouchEnd={handleMyReviewsTouchEnd}
                         onWheel={handleMyReviewsWheel}
                         style={{
                           position: "relative",
-                          height: 340,
+                          height: isMobile ? 280 : 340,
                           overflow: "hidden",
                           cursor: isDraggingMyReviews ? "grabbing" : "grab",
                           userSelect: "none",
                           marginBottom: 12,
+                          touchAction: "pan-y",
                         }}
                       >
-                        {myReviews.length > 1 && renderReviewCard(prev, "left")}
+                        {!isMobile && myReviews.length > 1 && renderReviewCard(prev, "left")}
                         {renderReviewCard(current, "center")}
-                        {myReviews.length > 1 && renderReviewCard(next, "right")}
+                        {!isMobile && myReviews.length > 1 && renderReviewCard(next, "right")}
                       </div>
                     );
                   })()}
 
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
                     <span style={{ fontSize: 13, color: "#8C7051" }}>
-                      좌우 드래그/휠로 넘기기
+                      {isMobile ? "좌우 스와이프로 넘기기" : "좌우 드래그/휠로 넘기기"}
                     </span>
                     <span style={{ fontSize: 13, color: "#8C7051" }}>
                       {myReviewsIndex + 1} / {myReviews.length}
@@ -433,8 +475,8 @@ export default function AuthButton() {
     <div
       style={{
         position: "fixed",
-        top: 16,
-        right: 16,
+        top: isMobile ? 10 : 16,
+        right: isMobile ? 10 : 16,
         zIndex: 1000,
       }}
     >
@@ -446,8 +488,8 @@ export default function AuthButton() {
           border: "1px solid #28502E",
           borderRadius: 8,
           boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-          padding: "8px 16px",
-          fontSize: 13,
+          padding: isMobile ? "7px 12px" : "8px 16px",
+          fontSize: isMobile ? 12 : 13,
           fontWeight: 600,
           cursor: "pointer",
           transition: "all 0.2s",

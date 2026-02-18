@@ -525,7 +525,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     return 1 - (1 - adRisk) * (1 - undisclosedAdRisk);
   };
 
-  const HEADER_AND_SEARCH_HEIGHT = 280; // Height of header + search form + padding
+  const HEADER_AND_SEARCH_HEIGHT = isMobile ? 238 : 280; // Height of header + search form + padding
 
   return (
     <div style={{ minHeight: "100vh", background: "rgba(71, 104, 44, 0.08)", color: "#28502E" }}>
@@ -533,12 +533,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         style={{
           background: "#28502E",
           color: "#ffffff",
-          padding: "24px 20px",
+          padding: isMobile ? "54px 16px 16px" : "24px 20px",
           textAlign: "center",
         }}
       >
-        <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>리뷰랩</h1>
-        <p style={{ marginTop: 8, fontSize: 16, opacity: 1, color: "#e8dfc9" }}>
+        <h1 style={{ fontSize: isMobile ? 28 : 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>리뷰랩</h1>
+        <p style={{ marginTop: 8, fontSize: isMobile ? 13 : 16, opacity: 1, color: "#e8dfc9" }}>
           이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 지수
         </p>
       </header>
@@ -559,8 +559,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
             display: isMobile && showDetailPane ? "none" : "block",
           }}
         >
-          <div style={{ padding: 20 }}>
-            <form onSubmit={handleSearch} style={{ marginBottom: 20 }}>
+          <div style={{ padding: isMobile ? 12 : 20 }}>
+            <form onSubmit={handleSearch} style={{ marginBottom: isMobile ? 12 : 20 }}>
               <input
                 type="text"
                 value={searchQuery}
@@ -568,10 +568,10 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 placeholder="가게 이름이나 주소로 검색..."
                 style={{
                   width: "100%",
-                  padding: "12px 16px",
+                  padding: isMobile ? "11px 12px" : "12px 16px",
                   border: "1px solid rgba(140, 112, 81, 0.3)",
                   borderRadius: 8,
-                  fontSize: 15,
+                  fontSize: isMobile ? 14 : 15,
                   outline: "none",
                   background: "rgba(71, 104, 44, 0.04)",
                   color: "#28502E",
@@ -582,13 +582,13 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 disabled={isSearching}
                 style={{
                   width: "100%",
-                  marginTop: 10,
-                  padding: "12px 16px",
+                  marginTop: 8,
+                  padding: isMobile ? "11px 12px" : "12px 16px",
                   background: isSearching ? "#ccc" : "#28502E",
                   color: "#ffffff",
                   border: "none",
                   borderRadius: 8,
-                  fontSize: 15,
+                  fontSize: isMobile ? 14 : 15,
                   fontWeight: 700,
                   cursor: isSearching ? "not-allowed" : "pointer",
                   transition: "all 0.2s ease",
@@ -641,7 +641,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                     onMouseEnter={() => setHoveredCardId(store.id)}
                     onMouseLeave={() => setHoveredCardId(null)}
                     style={{
-                      padding: 14,
+                      padding: isMobile ? 12 : 14,
                       marginBottom: 10,
                       border: isSelected ? "2px solid #28502E" : "1px solid rgba(140, 112, 81, 0.4)",
                       borderRadius: 12,
@@ -651,7 +651,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                       boxShadow: isHovered ? "0 2px 8px rgba(140, 112, 81, 0.2)" : "none",
                     }}
                   >
-                    <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4, color: "#28502E" }}>
+                    <div style={{ fontWeight: 700, fontSize: isMobile ? 15 : 16, marginBottom: 4, color: "#28502E" }}>
                       {store.name}
                     </div>
                     <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 8 }}>
@@ -680,7 +680,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
         <section
           style={{
-            padding: isMobile ? 20 : 24,
+            padding: isMobile ? 14 : 24,
             display: showDetailPane ? "block" : "none",
             minWidth: 0,
             maxWidth: "100%",
@@ -749,7 +749,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 style={{
                   border: "1px solid rgba(140, 112, 81, 0.4)",
                   borderRadius: 14,
-                  padding: 24,
+                  padding: isMobile ? 16 : 24,
                   background: "rgba(71, 104, 44, 0.1)",
                   marginBottom: 16,
                 }}
@@ -758,25 +758,25 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 <div
                   style={{
                     display: isMobile ? "block" : "flex",
-                    gap: 24,
+                    gap: isMobile ? 16 : 24,
                     alignItems: "flex-start",
                   }}
                 >
                   {/* Left side: Store info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {/* 가게 이름 */}
-                    <div style={{ fontSize: 28, fontWeight: 800, color: "#28502E", marginBottom: 16 }}>
+                    <div style={{ fontSize: isMobile ? 23 : 28, fontWeight: 800, color: "#28502E", marginBottom: 16 }}>
                       🍽 {storeDetail.store.name}
                     </div>
 
                     {/* 평점 */}
                     {storeDetail.insight?.rating !== null && storeDetail.insight?.rating !== undefined && (
                       <>
-                        <div style={{ fontSize: 44, fontWeight: 800, color: "#28502E", marginBottom: 4 }}>
-                          ⭐ {storeDetail.insight.rating.toFixed(1)} <span style={{ fontSize: 22, fontWeight: 700, color: "#28502E" }}>({externalCount}개)</span>
+                        <div style={{ fontSize: isMobile ? 34 : 44, fontWeight: 800, color: "#28502E", marginBottom: 4 }}>
+                          ⭐ {storeDetail.insight.rating.toFixed(1)} <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: "#28502E" }}>({externalCount}개)</span>
                         </div>
-                        <div style={{ fontSize: 20, fontWeight: 800, color: "#47682C", marginBottom: 12 }}>
-                          ★ 앱 점수 {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"} <span style={{ fontSize: 16, fontWeight: 700, color: "#47682C" }}>({inappCount}개)</span>
+                        <div style={{ fontSize: isMobile ? 17 : 20, fontWeight: 800, color: "#47682C", marginBottom: 12 }}>
+                          ★ 앱 점수 {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"} <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 700, color: "#47682C" }}>({inappCount}개)</span>
                         </div>
                       </>
                     )}
@@ -791,11 +791,11 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                       
                       return (
                         <div style={{ marginBottom: 12 }}>
-                          <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E" }}>
+                          <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 700, color: "#28502E" }}>
                             평점 믿음 지수 {detailReviewCount > 0 ? `${emoji} ${label} (${totalScore}점)` : "-"}
                           </div>
                           {detailReviewCount > 0 && (
-                            <div style={{ fontSize: 13, color: "#8C7051", marginTop: 4 }}>
+                            <div style={{ fontSize: isMobile ? 12 : 13, color: "#8C7051", marginTop: 4 }}>
                               {breakdown.sampleSizeDesc} (표본 {breakdown.sampleSize}점 {breakdown.sampleSizeEmoji}) · {breakdown.stabilityDesc} (안정성 {breakdown.stability}점 {breakdown.stabilityEmoji}) · {breakdown.freshnessDesc} (최신성 {breakdown.freshness}점 {breakdown.freshnessEmoji})
                             </div>
                           )}
@@ -813,14 +813,14 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                       const percentile = Math.round((rank / total) * 100);
                       
                       return (
-                        <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E", marginBottom: 16 }}>
+                        <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 700, color: "#28502E", marginBottom: 16 }}>
                           📍 1km 이내 상위 {percentile}% ({rank}위 / {total}개)
                         </div>
                       );
                     })()}
 
                     {/* 부가 정보 한 줄 */}
-                    <div style={{ fontSize: 13, color: "#8C7051" }}>
+                    <div style={{ fontSize: isMobile ? 12 : 13, color: "#8C7051", lineHeight: 1.4 }}>
                       리뷰 {Math.max(storeDetail.insight?.reviewCount ?? 0, storeDetail.summary.reviewCount)}개 · 1km 이내 가게 비교 · {storeDetail.store.address ?? "주소 정보 없음"}
                     </div>
                   </div>
