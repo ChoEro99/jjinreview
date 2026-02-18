@@ -885,8 +885,114 @@ function sortByNearest(
   });
 }
 
-export async function getStoreDetail(id: number) {
+// Snapshot TTL in days
+const SNAPSHOT_TTL_DAYS = 7;
+
+type StoreDetailSnapshot = {
+  store: StoreBase;
+  summary: StoreSummary;
+  insight: {
+    reliabilityLabel: string;
+    topPercent1km: number | null;
+    rankWithin1km: number | null;
+    rankTotalWithin1km: number | null;
+    comparedStores: Array<{
+      id: number | string;
+      name: string;
+      address: string | null;
+      rank: number;
+      rating: number;
+      reviewCount: number;
+      isSelf: boolean;
+    }>;
+    reviewCount: number;
+    rating: number | null;
+    radiusKm: number;
+    ratingTrustScore: {
+      totalScore: number;
+      breakdown: { sampleSize: number; naturalness: number };
+      label: string;
+      emoji: string;
+    };
+  };
+  photos: string[];
+  photosFull: string[];
+};
+
+async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnapshot | null> {
   const sb = supabaseServer();
+  
+  try {
+    const { data, error } = await sb
+      .from("store_detail_snapshots")
+      .select("snapshot_data, expires_at")
+      .eq("store_id", storeId)
+      .single();
+    
+    if (error || !data) {
+      return null;
+    }
+    
+    // Check if snapshot is expired
+    const expiresAt = new Date(data.expires_at);
+    const now = new Date();
+    
+    if (now > expiresAt) {
+      // Snapshot expired, return null to trigger recalculation
+      return null;
+    }
+    
+    // Return cached snapshot data
+    return data.snapshot_data as StoreDetailSnapshot;
+  } catch (error) {
+    console.error("Error reading snapshot:", error);
+    return null;
+  }
+}
+
+async function saveStoreDetailSnapshot(storeId: number, snapshot: StoreDetailSnapshot): Promise<void> {
+  const sb = supabaseServer();
+  
+  try {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + SNAPSHOT_TTL_DAYS * 24 * 60 * 60 * 1000);
+    
+    await sb
+      .from("store_detail_snapshots")
+      .upsert({
+        store_id: storeId,
+        snapshot_data: snapshot,
+        expires_at: expiresAt.toISOString(),
+      }, {
+        onConflict: "store_id"
+      });
+  } catch (error) {
+    // Don't throw - just log the error. Cache failure shouldn't break the app
+    console.error("Error saving snapshot:", error);
+  }
+}
+
+export async function getStoreDetail(id: number) {
+  // Try to get cached snapshot first
+  const cachedSnapshot = await getStoreDetailSnapshot(id);
+  
+  const sb = supabaseServer();
+  
+  // Always load reviews fresh (not cached) - per requirements, reviews are not included in snapshots
+  // We load them here regardless of cache status because they're always needed in the response
+  const baseReviews = await loadReviewsByStoreIds([id]);
+  const reviews = await enrichReviews(baseReviews);
+  reviews.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  
+  // If we have a valid cached snapshot, use it and return early
+  if (cachedSnapshot) {
+    return {
+      ...cachedSnapshot,
+      reviews, // Always return fresh reviews
+    };
+  }
+  
+  // No valid cache - compute everything from scratch
   const full = await sb
     .from("stores")
     .select("id, name, address, latitude, longitude, external_rating, external_review_count")
@@ -931,7 +1037,7 @@ export async function getStoreDetail(id: number) {
   }
   
   // Parallelize independent tasks
-  const [, photosResult, baseReviews] = await Promise.all([
+  const [, photosResult] = await Promise.all([
     importNearbyRestaurantsForStore(normalizedStore).catch(() => null),
     (async () => {
       const photos: string[] = [];
@@ -963,13 +1069,10 @@ export async function getStoreDetail(id: number) {
       }
       return { photos, photosFull };
     })(),
-    loadReviewsByStoreIds([id]),
   ]);
 
   const photos = photosResult.photos;
   const photosFull = photosResult.photosFull;
-  const reviews = await enrichReviews(baseReviews);
-  reviews.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 
   const summary = summarizeReviews(reviews, normalizedStore.externalRating, normalizedStore.externalReviewCount ?? null);
   
@@ -990,9 +1093,9 @@ export async function getStoreDetail(id: number) {
     normalizedStore.externalReviewCount ?? 0
   );
 
-  return {
+  // Create snapshot object (without reviews)
+  const snapshot: StoreDetailSnapshot = {
     store: normalizedStore,
-    reviews,
     summary,
     insight: {
       reliabilityLabel,
@@ -1007,6 +1110,15 @@ export async function getStoreDetail(id: number) {
     },
     photos,
     photosFull,
+  };
+  
+  // Save snapshot asynchronously (fire-and-forget pattern)
+  // Error handling is done inside saveStoreDetailSnapshot, cache failures won't break the response
+  saveStoreDetailSnapshot(id, snapshot);
+
+  return {
+    ...snapshot,
+    reviews, // Include fresh reviews in response
   };
 }
 
