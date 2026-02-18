@@ -1,30 +1,43 @@
 "use client";
 
 import { useSession, signIn } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function LoginPromptModal() {
   const { data: session } = useSession();
-  const [hasShownModal, setHasShownModal] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem("loginPromptShown") === "true";
+  const [isMounted, setIsMounted] = useState(false);
+  const [shouldShowModal, setShouldShowModal] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+    // Check if modal has been shown before
+    const hasShown = localStorage.getItem("loginPromptShown") === "true";
+    if (!hasShown && !session?.user) {
+      setShouldShowModal(true);
     }
-    return false;
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Update modal visibility when session changes
+  useEffect(() => {
+    if (session?.user && shouldShowModal) {
+      setShouldShowModal(false);
+    }
+  }, [session, shouldShowModal]);
 
   const handleClose = () => {
     localStorage.setItem("loginPromptShown", "true");
-    setHasShownModal(true);
+    setShouldShowModal(false);
   };
 
   const handleLogin = () => {
     localStorage.setItem("loginPromptShown", "true");
-    setHasShownModal(true);
+    setShouldShowModal(false);
     signIn("google", { callbackUrl: window.location.href });
   };
 
-  // Don't show modal if user is logged in or if modal has already been shown
-  if (session?.user || hasShownModal) {
+  // Don't render anything until mounted (SSR safety)
+  if (!isMounted || !shouldShowModal) {
     return null;
   }
 

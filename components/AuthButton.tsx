@@ -2,13 +2,17 @@
 
 import { useSession, signIn, signOut } from "next-auth/react";
 
+const MAX_DISPLAY_NAME_LENGTH = 10;
+
 export default function AuthButton() {
   const { data: session } = useSession();
 
   if (session?.user) {
     // Logged in state
     const displayName = session.user.name || session.user.email || "User";
-    const truncatedName = displayName.length > 10 ? displayName.slice(0, 10) + "..." : displayName;
+    const truncatedName = displayName.length > MAX_DISPLAY_NAME_LENGTH 
+      ? displayName.slice(0, MAX_DISPLAY_NAME_LENGTH) + "..." 
+      : displayName;
 
     return (
       <div
