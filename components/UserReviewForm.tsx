@@ -199,15 +199,28 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
                   userSelect: "none",
                   position: "relative",
                   display: "inline-block",
+                  width: "1em",
+                  height: "1em",
+                  lineHeight: 1,
                 }}
               >
-                {filled ? "★" : half ? "⯨" : "☆"}
+                <span style={{ position: "absolute", top: 0, left: 0, color: "#dddddd" }}>☆</span>
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    color: "#FFB800",
+                    overflow: "hidden",
+                    width: filled ? "100%" : half ? "50%" : "0%",
+                  }}
+                >★</span>
               </span>
             );
           })}
         </div>
         <div style={{ fontSize: 14, color: "#8C7051" }}>
-          현재: {rating > 0 ? `${rating.toFixed(1)}점` : "미선택"}
+          {rating > 0 ? `${rating.toFixed(1)}점` : ""}
         </div>
       </div>
 
@@ -219,7 +232,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
         }}
       >
         <div style={{ fontSize: 14, color: "#8C7051", marginBottom: 16 }}>
-          ---- 여기서부턴 선택 ----
+          선택
         </div>
 
         {/* Food */}

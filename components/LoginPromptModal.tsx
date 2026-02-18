@@ -4,23 +4,29 @@ import { useSession, signIn } from "next-auth/react";
 import { useEffect, useState } from "react";
 
 export default function LoginPromptModal() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [isMounted, setIsMounted] = useState(false);
   const [shouldShowModal, setShouldShowModal] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (status === 'loading') return;
     // Check if modal has been shown before
     const hasShown = localStorage.getItem("loginPromptShown") === "true";
     if (!hasShown && !session?.user) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShouldShowModal(true);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [status, session]);
 
   // Update modal visibility when session changes
   useEffect(() => {
     if (session?.user && shouldShowModal) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShouldShowModal(false);
     }
   }, [session, shouldShowModal]);
