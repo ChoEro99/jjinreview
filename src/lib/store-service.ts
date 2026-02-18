@@ -300,6 +300,33 @@ function normalizeReviewRow(row: Record<string, unknown>): Omit<ReviewRecord, "l
   };
 }
 
+function normalizeUserReviewRow(row: Record<string, unknown>): Omit<ReviewRecord, "latestAnalysis"> {
+  const optionText = [
+    typeof row.food === "string" ? `음식:${row.food}` : null,
+    typeof row.price === "string" ? `가격:${row.price}` : null,
+    typeof row.service === "string" ? `서비스:${row.service}` : null,
+    typeof row.space === "string" ? `공간:${row.space}` : null,
+    typeof row.wait_time === "string" ? `대기:${row.wait_time}` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" · ");
+
+  const comment = typeof row.comment === "string" ? row.comment.trim() : "";
+  const content = comment || optionText || "사용자가 남긴 리뷰입니다.";
+
+  return {
+    // Use negative id namespace for user_reviews to avoid collision with reviews.id.
+    id: -(toNumber(row.id, 0) ?? 0),
+    storeId: toNumber(row.store_id, 0) ?? 0,
+    source: "inapp",
+    rating: Math.max(0.5, Math.min(5, toNumber(row.rating, 3) ?? 3)),
+    content,
+    authorName: typeof row.user_name === "string" ? row.user_name : "내 리뷰",
+    isDisclosedAd: false,
+    createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
+  };
+}
+
 function normalizeStoreRow(row: Record<string, unknown>): StoreBase {
   return {
     id: toNumber(row.id, 0) ?? 0,
@@ -436,6 +463,7 @@ async function loadReviewsByStoreIds(storeIds: number[]) {
   if (!storeIds.length) return [] as Omit<ReviewRecord, "latestAnalysis">[];
 
   const sb = supabaseServer();
+  const merged: Omit<ReviewRecord, "latestAnalysis">[] = [];
   let tableMissingCount = 0;
   let lastError: Error | null = null;
 
@@ -447,9 +475,12 @@ async function loadReviewsByStoreIds(storeIds: number[]) {
       .order("created_at", { ascending: false });
 
     if (!full.error) {
-      return (full.data ?? []).map((row) =>
-        normalizeReviewRow(row as Record<string, unknown>)
+      merged.push(
+        ...(full.data ?? []).map((row) =>
+          normalizeReviewRow(row as Record<string, unknown>)
+        )
       );
+      break;
     }
 
     // Some legacy schemas miss source/author/is_disclosed_ad columns.
@@ -461,9 +492,12 @@ async function loadReviewsByStoreIds(storeIds: number[]) {
         .order("created_at", { ascending: false });
 
       if (!minimal.error) {
-        return (minimal.data ?? []).map((row) =>
-          normalizeReviewRow(row as Record<string, unknown>)
+        merged.push(
+          ...(minimal.data ?? []).map((row) =>
+            normalizeReviewRow(row as Record<string, unknown>)
+          )
         );
+        break;
       }
 
       if (isMissingTableError(minimal.error)) {
@@ -484,9 +518,37 @@ async function loadReviewsByStoreIds(storeIds: number[]) {
     break;
   }
 
-  if (tableMissingCount === REVIEW_TABLE_CANDIDATES.length) return [];
-  if (lastError) throw lastError;
-  return [];
+  if (tableMissingCount !== REVIEW_TABLE_CANDIDATES.length && !lastError) {
+    const userReviews = await sb
+      .from("user_reviews")
+      .select("id, store_id, rating, food, price, service, space, wait_time, comment, created_at, users(name)")
+      .in("store_id", storeIds)
+      .order("created_at", { ascending: false });
+
+    if (!userReviews.error) {
+      const rows = (userReviews.data ?? []) as Array<Record<string, unknown>>;
+      merged.push(
+        ...rows.map((row) => {
+          const users = row.users as { name?: unknown } | Array<{ name?: unknown }> | null | undefined;
+          const userName =
+            Array.isArray(users)
+              ? (typeof users[0]?.name === "string" ? users[0].name : null)
+              : (users && typeof users.name === "string" ? users.name : null);
+          return normalizeUserReviewRow({
+            ...row,
+            user_name: userName,
+          });
+        })
+      );
+    } else if (!isMissingTableError(userReviews.error)) {
+      // Keep base reviews even if user_reviews query fails for non-missing-table reasons.
+      console.error("Failed to load user_reviews:", userReviews.error.message);
+    }
+  }
+
+  if (tableMissingCount === REVIEW_TABLE_CANDIDATES.length && merged.length === 0) return [];
+  if (lastError && merged.length === 0) throw lastError;
+  return merged;
 }
 
 async function loadLatestAnalysesByReviewIds(reviewIds: number[]) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
 
 interface UserReviewFormProps {
@@ -10,6 +10,33 @@ interface UserReviewFormProps {
 
 type OptionValue = "good" | "normal" | "bad" | "expensive" | "cheap" | "enough" | "narrow" | "short" | "long" | null;
 const STAR_ACTIVE_COLOR = "#47682C";
+
+interface MyReview {
+  id: number;
+  storeId: number;
+  rating: number;
+  food: OptionValue;
+  price: OptionValue;
+  service: OptionValue;
+  space: OptionValue;
+  waitTime: OptionValue;
+  comment: string | null;
+  createdAt: string;
+}
+
+type NoticeType = "success" | "error";
+
+const LABEL_MAP: Record<Exclude<OptionValue, null>, string> = {
+  good: "좋아요",
+  normal: "보통",
+  bad: "별로예요",
+  expensive: "비싸요",
+  cheap: "싸요",
+  enough: "충분해요",
+  narrow: "좁아요",
+  short: "짧아요",
+  long: "길어요",
+};
 
 export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormProps) {
   const { data: session } = useSession();
@@ -22,6 +49,42 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
   const [waitTime, setWaitTime] = useState<OptionValue>(null);
   const [comment, setComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingMyReview, setIsCheckingMyReview] = useState(false);
+  const [myReview, setMyReview] = useState<MyReview | null>(null);
+  const [notice, setNotice] = useState<{ type: NoticeType; message: string } | null>(null);
+
+  const fetchMyReview = useCallback(async () => {
+    if (!session?.user) {
+      setMyReview(null);
+      return;
+    }
+
+    setIsCheckingMyReview(true);
+    try {
+      const response = await fetch(`/api/user-reviews?storeId=${storeId}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        setMyReview(null);
+        return;
+      }
+      const result = await response.json();
+      if (result.ok) {
+        setMyReview(result.review ?? null);
+      } else {
+        setMyReview(null);
+      }
+    } catch (error) {
+      console.error("Fetch my review error:", error);
+      setMyReview(null);
+    } finally {
+      setIsCheckingMyReview(false);
+    }
+  }, [session?.user, storeId]);
+
+  useEffect(() => {
+    void fetchMyReview();
+  }, [fetchMyReview]);
 
   const handleStarClick = (e: React.MouseEvent<HTMLSpanElement>, starIndex: number) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -45,7 +108,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
 
   const handleSubmitMinimal = async () => {
     if (rating === 0) {
-      alert("별점을 선택해주세요");
+      setNotice({ type: "error", message: "별점을 선택해주세요." });
       return;
     }
     await handleSubmit();
@@ -53,7 +116,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
 
   const handleSubmit = async () => {
     if (rating === 0) {
-      alert("별점을 선택해주세요");
+      setNotice({ type: "error", message: "별점을 선택해주세요." });
       return;
     }
 
@@ -78,7 +141,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
       const result = await response.json();
 
       if (result.ok) {
-        alert("리뷰가 성공적으로 등록되었습니다!");
+        setNotice({ type: "success", message: "리뷰 완료됐어요. 소중한 의견 감사합니다." });
         // Reset form
         setRating(0);
         setFood(null);
@@ -87,13 +150,14 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
         setSpace(null);
         setWaitTime(null);
         setComment("");
+        await fetchMyReview();
         if (onSuccess) onSuccess();
       } else {
-        alert(result.error || "리뷰 등록에 실패했습니다.");
+        setNotice({ type: "error", message: result.error || "리뷰 등록에 실패했습니다." });
       }
     } catch (error) {
       console.error("Submit error:", error);
-      alert("리뷰 등록 중 오류가 발생했습니다.");
+      setNotice({ type: "error", message: "리뷰 등록 중 오류가 발생했습니다." });
     } finally {
       setIsSubmitting(false);
     }
@@ -161,6 +225,99 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
     );
   }
 
+  if (isCheckingMyReview) {
+    return (
+      <div
+        style={{
+          border: "1px solid rgba(140, 112, 81, 0.4)",
+          borderRadius: 14,
+          padding: 24,
+          background: "rgba(71, 104, 44, 0.1)",
+          color: "#28502E",
+          fontSize: 14,
+        }}
+      >
+        내가 쓴 리뷰 확인 중...
+      </div>
+    );
+  }
+
+  if (myReview) {
+    const optionRows = [
+      myReview.food ? `음식: ${LABEL_MAP[myReview.food]}` : null,
+      myReview.price ? `가격: ${LABEL_MAP[myReview.price]}` : null,
+      myReview.service ? `서비스: ${LABEL_MAP[myReview.service]}` : null,
+      myReview.space ? `공간: ${LABEL_MAP[myReview.space]}` : null,
+      myReview.waitTime ? `대기시간: ${LABEL_MAP[myReview.waitTime]}` : null,
+    ].filter(Boolean);
+
+    return (
+      <div
+        style={{
+          border: "1px solid rgba(140, 112, 81, 0.4)",
+          borderRadius: 14,
+          padding: 24,
+          background: "rgba(71, 104, 44, 0.1)",
+        }}
+      >
+        {notice && (
+          <div
+            style={{
+              border: `1px solid ${notice.type === "success" ? "rgba(71, 104, 44, 0.5)" : "rgba(178, 73, 39, 0.45)"}`,
+              borderRadius: 10,
+              background: notice.type === "success" ? "rgba(71, 104, 44, 0.16)" : "rgba(178, 73, 39, 0.1)",
+              color: notice.type === "success" ? "#28502E" : "#7A2A19",
+              padding: "10px 12px",
+              marginBottom: 12,
+              fontSize: 14,
+              fontWeight: 600,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            <span>{notice.message}</span>
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "inherit",
+                cursor: "pointer",
+                fontSize: 16,
+                lineHeight: 1,
+                padding: 0,
+              }}
+            >
+              ×
+            </button>
+          </div>
+        )}
+        <div style={{ fontSize: 16, fontWeight: 700, color: "#28502E", marginBottom: 10 }}>
+          내가 작성한 리뷰
+        </div>
+        <div style={{ fontSize: 15, color: "#28502E", marginBottom: 8 }}>
+          평점 {Number(myReview.rating).toFixed(1)}점
+        </div>
+        {optionRows.length > 0 && (
+          <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 8 }}>
+            {optionRows.join(" · ")}
+          </div>
+        )}
+        {myReview.comment && (
+          <div style={{ fontSize: 14, color: "#28502E", marginBottom: 8 }}>
+            {myReview.comment}
+          </div>
+        )}
+        <div style={{ fontSize: 12, color: "#8C7051" }}>
+          작성일 {new Date(myReview.createdAt).toLocaleString("ko-KR")}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -170,6 +327,41 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
         background: "rgba(71, 104, 44, 0.1)",
       }}
     >
+      {notice && (
+        <div
+          style={{
+            border: `1px solid ${notice.type === "success" ? "rgba(71, 104, 44, 0.5)" : "rgba(178, 73, 39, 0.45)"}`,
+            borderRadius: 10,
+            background: notice.type === "success" ? "rgba(71, 104, 44, 0.16)" : "rgba(178, 73, 39, 0.1)",
+            color: notice.type === "success" ? "#28502E" : "#7A2A19",
+            padding: "10px 12px",
+            marginBottom: 14,
+            fontSize: 14,
+            fontWeight: 600,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span>{notice.message}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            style={{
+              border: "none",
+              background: "transparent",
+              color: "inherit",
+              cursor: "pointer",
+              fontSize: 16,
+              lineHeight: 1,
+              padding: 0,
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
       {/* User info */}
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "#28502E" }}>
@@ -205,7 +397,17 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
                   lineHeight: 1,
                 }}
               >
-                <span style={{ position: "absolute", top: 0, left: 0, color: "#dddddd" }}>☆</span>
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    color: "transparent",
+                    WebkitTextStroke: "1.3px #8C7051",
+                  }}
+                >
+                  ★
+                </span>
                 <span
                   style={{
                     position: "absolute",

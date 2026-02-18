@@ -3,6 +3,61 @@ import { getServerSession } from "next-auth";
 import { supabaseServer } from "@/src/lib/supabaseServer";
 import { authOptions } from "../auth/[...nextauth]/route";
 
+export async function GET(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    const userId = session?.user ? (session.user as { id?: string }).id : null;
+
+    if (!userId) {
+      return NextResponse.json({ ok: false, error: "로그인이 필요합니다." }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const storeIdRaw = searchParams.get("storeId");
+    const storeId = storeIdRaw ? Number(storeIdRaw) : NaN;
+
+    if (!Number.isFinite(storeId) || storeId <= 0) {
+      return NextResponse.json({ ok: false, error: "유효한 storeId가 필요합니다." }, { status: 400 });
+    }
+
+    const supabase = supabaseServer();
+    const { data, error } = await supabase
+      .from("user_reviews")
+      .select("id, store_id, rating, food, price, service, space, wait_time, comment, created_at")
+      .eq("store_id", storeId)
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error in GET /api/user-reviews:", error);
+      return NextResponse.json({ ok: false, error: "리뷰 조회 중 오류가 발생했습니다." }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      review: data
+        ? {
+            id: data.id,
+            storeId: data.store_id,
+            rating: data.rating,
+            food: data.food,
+            price: data.price,
+            service: data.service,
+            space: data.space,
+            waitTime: data.wait_time,
+            comment: data.comment,
+            createdAt: data.created_at,
+          }
+        : null,
+    });
+  } catch (error) {
+    console.error("Error in GET /api/user-reviews:", error);
+    return NextResponse.json({ ok: false, error: "서버 오류가 발생했습니다." }, { status: 500 });
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
