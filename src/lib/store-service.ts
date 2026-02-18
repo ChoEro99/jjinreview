@@ -942,6 +942,7 @@ export async function getStoresWithSummary() {
   const normalizedStores: StoreBase[] = (storesData ?? []).map((store) =>
     normalizeStoreRow(store)
   );
+  const storeById = new Map(normalizedStores.map((store) => [store.id, store] as const));
 
   const metricMap = await loadStoreMetricMap(normalizedStores.map((store) => store.id));
   const appAverageMap = await loadAppAverageRatingByStoreIds(normalizedStores.map((store) => store.id));
@@ -965,7 +966,7 @@ export async function getStoresWithSummary() {
 
     computedSummaryMap = new Map(
       missingStoreIds.map((storeId) => {
-        const store = normalizedStores.find((row) => row.id === storeId);
+        const store = storeById.get(storeId);
         const summary = summarizeReviews(
           grouped.get(storeId) ?? [],
           store?.externalRating ?? null,
@@ -999,6 +1000,7 @@ async function enrichStoresWithSummary(stores: StoreBase[]) {
 
   const metricMap = await loadStoreMetricMap(stores.map((store) => store.id));
   const appAverageMap = await loadAppAverageRatingByStoreIds(stores.map((store) => store.id));
+  const storeById = new Map(stores.map((store) => [store.id, store] as const));
   const missingStoreIds = stores
     .filter((store) => !metricMap.has(store.id))
     .map((store) => store.id);
@@ -1016,7 +1018,7 @@ async function enrichStoresWithSummary(stores: StoreBase[]) {
 
     computedSummaryMap = new Map(
       missingStoreIds.map((storeId) => {
-        const store = stores.find((row) => row.id === storeId);
+        const store = storeById.get(storeId);
         const summary = summarizeReviews(
           grouped.get(storeId) ?? [],
           store?.externalRating ?? null,
@@ -1027,19 +1029,20 @@ async function enrichStoresWithSummary(stores: StoreBase[]) {
     );
   }
 
-  return stores.map((store) => ({
-    ...store,
-    summary: {
-      ...(metricMap.get(store.id)
-        ? metricRowToSummary(metricMap.get(store.id) as StoreMetricRow)
-        : computedSummaryMap.get(store.id) ?? summarizeReviews([], store.externalRating, store.externalReviewCount ?? null)),
-      appAverageRating:
-        appAverageMap.get(store.id) ??
-        (metricMap.get(store.id)
-          ? metricRowToSummary(metricMap.get(store.id) as StoreMetricRow).appAverageRating
-          : computedSummaryMap.get(store.id)?.appAverageRating ?? null),
-    },
-  })) satisfies StoreWithSummary[];
+  return stores.map((store) => {
+    const metric = metricMap.get(store.id);
+    const computed =
+      computedSummaryMap.get(store.id) ??
+      summarizeReviews([], store.externalRating, store.externalReviewCount ?? null);
+    const baseSummary = metric ? metricRowToSummary(metric) : computed;
+    return {
+      ...store,
+      summary: {
+        ...baseSummary,
+        appAverageRating: appAverageMap.get(store.id) ?? baseSummary.appAverageRating ?? null,
+      },
+    };
+  }) satisfies StoreWithSummary[];
 }
 
 async function findRegisteredStoresByKeyword(

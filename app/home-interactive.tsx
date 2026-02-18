@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import Image from "next/image";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 import UserReviewForm from "@/components/UserReviewForm";
 
@@ -415,6 +416,32 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
   const showDetailPane = selectedStoreId !== null;
 
+  const storeCards = useMemo(
+    () =>
+      stores.map((store) => {
+        const totalReviewCount = Math.max(
+          store.summary.reviewCount,
+          store.summary.externalReviewCount,
+          store.externalReviewCount ?? 0
+        );
+        const ratingTrust = computeRatingTrustScore(
+          store.externalRating ?? null,
+          Math.max(store.summary.externalReviewCount ?? 0, store.externalReviewCount ?? 0)
+        );
+        return { store, totalReviewCount, ratingTrust };
+      }),
+    [stores]
+  );
+
+  const visibleComparedStores = useMemo(() => {
+    const compared = storeDetail?.insight?.comparedStores ?? [];
+    const sliced = showAllComparedStores ? compared : compared.slice(0, 5);
+    return sliced.map((comparedStore) => ({
+      ...comparedStore,
+      trustScore: computeRatingTrustScore(comparedStore.rating, comparedStore.reviewCount),
+    }));
+  }, [storeDetail?.insight?.comparedStores, showAllComparedStores]);
+
   // Calculate combined ad risk probability from individual risk scores
   const calculateCombinedAdRisk = (adRisk: number, undisclosedAdRisk: number): number => {
     // Formula: P(A or B) = 1 - P(not A) * P(not B)
@@ -519,20 +546,9 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 cursor: isListDragging ? "grabbing" : "grab",
               }}
             >
-              {stores.map((store) => {
+              {storeCards.map(({ store, totalReviewCount, ratingTrust }) => {
                 const isSelected = selectedStoreId === store.id;
                 const isHovered = hoveredCardId === store.id;
-                const totalReviewCount = Math.max(
-                  store.summary.reviewCount,
-                  store.summary.externalReviewCount,
-                  store.externalReviewCount ?? 0
-                );
-                
-                // Compute rating trust score for each store
-                const ratingTrust = computeRatingTrustScore(
-                  store.externalRating ?? null,
-                  Math.max(store.summary.externalReviewCount ?? 0, store.externalReviewCount ?? 0)
-                );
 
                 return (
                   <div
@@ -759,6 +775,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                               height: "100px",
                               borderRadius: 8,
                               overflow: "hidden",
+                              position: "relative",
                               background: failedPhotos.has(idx) ? "rgba(140, 112, 81, 0.2)" : "transparent",
                               display: "flex",
                               alignItems: "center",
@@ -768,17 +785,17 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                             {failedPhotos.has(idx) ? (
                               <span style={{ fontSize: 12, color: "#8C7051" }}>사진 로드 실패</span>
                             ) : (
-                              <img
+                              <Image
                                 src={photoUrl}
                                 alt={`${storeDetail.store.name} 사진 ${idx + 1}`}
-                                loading="lazy"
+                                unoptimized
+                                fill
+                                sizes="(max-width: 768px) 33vw, 120px"
                                 onClick={() => handlePhotoClick(idx)}
                                 onError={() => {
                                   setFailedPhotos(prev => new Set(prev).add(idx));
                                 }}
                                 style={{
-                                  width: "100%",
-                                  height: "100%",
                                   objectFit: "cover",
                                   cursor: "pointer",
                                   transition: "transform 0.2s ease",
@@ -896,9 +913,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                       <div style={{ fontSize: 16, color: "#ffffff" }}>사진을 불러올 수 없습니다</div>
                     </div>
                   ) : (
-                    <img
+                    <Image
                       src={storeDetail.photosFull[currentPhotoIndex]}
                       alt={`${storeDetail.store.name} 사진`}
+                      unoptimized
+                      width={1400}
+                      height={1000}
                       onClick={(e) => e.stopPropagation()}
                       onError={() => {
                         setFailedPhotos(prev => new Set(prev).add(currentPhotoIndex));
@@ -906,6 +926,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                       style={{
                         maxWidth: "90%",
                         maxHeight: "90%",
+                        width: "auto",
+                        height: "auto",
                         objectFit: "contain",
                         borderRadius: 8,
                       }}
@@ -1030,12 +1052,8 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 </h3>
                 {storeDetail.insight?.comparedStores && storeDetail.insight.comparedStores.length > 0 ? (
                   <div style={{ border: "1px solid rgba(140, 112, 81, 0.4)", borderRadius: 12, background: "rgba(140, 112, 81, 0.06)", overflow: "hidden" }}>
-                    {(showAllComparedStores
-                      ? storeDetail.insight.comparedStores
-                      : storeDetail.insight.comparedStores.slice(0, 5)
-                    ).map((comparedStore, idx, list) => {
+                    {visibleComparedStores.map((comparedStore, idx, list) => {
                       const isHovered = hoveredCompareId === comparedStore.id;
-                      const trustScore = computeRatingTrustScore(comparedStore.rating, comparedStore.reviewCount);
                       return (
                         <div
                           key={comparedStore.id}
@@ -1065,7 +1083,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                             </span>
                           )}
                           <span style={{ marginLeft: 8, color: "#8C7051" }}>
-                            · ⭐{comparedStore.rating.toFixed(1)} · <span style={{ color: "#47682C", fontWeight: 700 }}>★ 앱 점수 {typeof comparedStore.appAverageRating === "number" ? comparedStore.appAverageRating.toFixed(1) : "-"}</span> · 리뷰 {comparedStore.reviewCount} · {comparedStore.reviewCount > 0 ? `${trustScore.emoji} ${trustScore.totalScore}점` : "-"}
+                            · ⭐{comparedStore.rating.toFixed(1)} · <span style={{ color: "#47682C", fontWeight: 700 }}>★ 앱 점수 {typeof comparedStore.appAverageRating === "number" ? comparedStore.appAverageRating.toFixed(1) : "-"}</span> · 리뷰 {comparedStore.reviewCount} · {comparedStore.reviewCount > 0 ? `${comparedStore.trustScore.emoji} ${comparedStore.trustScore.totalScore}점` : "-"}
                           </span>
                         </div>
                       );

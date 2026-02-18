@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { getStoreDetail } from "@/src/lib/store-service";
 import { ReviewForm } from "@/app/stores/[id]/review-form";
@@ -107,12 +108,16 @@ export default async function StorePage({ params }: Props) {
         <div style={{ marginTop: 20, marginBottom: 20 }}>
           {/* 대표 사진 */}
           {detail.photos[0] && (
-            <img
+            <Image
               src={detail.photos[0].url}
               alt={`${detail.store.name} 대표 사진`}
+              unoptimized
+              width={1200}
+              height={700}
               style={{
                 width: "100%",
                 maxHeight: 250,
+                height: "auto",
                 objectFit: "cover",
                 borderRadius: 12,
                 marginBottom: 8,
@@ -123,13 +128,18 @@ export default async function StorePage({ params }: Props) {
           {detail.photos.length > 1 && (
             <div style={{ display: "flex", gap: 8 }}>
               {detail.photos.slice(1, 3).map((photo, idx) => (
-                <img
+                <Image
                   key={idx}
                   src={photo.url}
                   alt={`${detail.store.name} 리뷰 사진 ${idx + 1}`}
+                  unoptimized
+                  width={600}
+                  height={400}
                   style={{
                     flex: 1,
                     maxHeight: 150,
+                    width: "100%",
+                    height: "auto",
                     objectFit: "cover",
                     borderRadius: 8,
                   }}
