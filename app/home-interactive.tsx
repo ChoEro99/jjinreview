@@ -1129,14 +1129,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               </div>
 
               {/* 리뷰 작성 */}
-              {isReviewFormOpen && (
-                <div style={{ marginBottom: 24 }}>
-                  <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
-                    리뷰 작성
-                  </h3>
-                  <UserReviewForm storeId={selectedStoreId!} />
-                </div>
-              )}
+              <div style={{ marginBottom: isReviewFormOpen ? 24 : 0, display: isReviewFormOpen ? "block" : "none" }}>
+                <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
+                  리뷰 작성
+                </h3>
+                <UserReviewForm storeId={selectedStoreId!} />
+              </div>
 
               <div>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
