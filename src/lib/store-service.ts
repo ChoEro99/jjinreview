@@ -934,8 +934,7 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
     }
     
     // Check if snapshot is expired
-    const expiresAtValue = data.expires_at;
-    const expiresAt = new Date(expiresAtValue);
+    const expiresAt = new Date(data.expires_at);
     const now = new Date();
     
     if (now > expiresAt) {
@@ -946,7 +945,7 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
             .from("store_detail_snapshots")
             .delete()
             .eq("store_id", storeId)
-            .eq("expires_at", expiresAtValue);
+            .eq("expires_at", data.expires_at);
           if (error) {
             console.error("Error deleting expired snapshot:", error);
           }
