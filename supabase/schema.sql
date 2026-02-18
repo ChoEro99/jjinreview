@@ -70,6 +70,13 @@ alter table public.stores add column if not exists longitude numeric(10, 7);
 alter table public.reviews add column if not exists updated_at timestamptz not null default now();
 alter table public.reviews add column if not exists is_disclosed_ad boolean not null default false;
 
+create table if not exists public.store_detail_snapshots (
+  store_id bigint primary key references public.stores(id) on delete cascade,
+  snapshot_data jsonb not null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null
+);
+
 create index if not exists idx_reviews_store_id on public.reviews(store_id);
 create index if not exists idx_reviews_source on public.reviews(source);
 create index if not exists idx_reviews_created_at on public.reviews(created_at desc);
@@ -77,3 +84,4 @@ create index if not exists idx_review_analyses_review_id_created_at on public.re
 create index if not exists idx_review_analyses_store_id_created_at on public.review_analyses(store_id, created_at desc);
 create index if not exists idx_google_review_cache_updated_at on public.google_review_cache(updated_at desc);
 create index if not exists idx_naver_signal_cache_updated_at on public.naver_signal_cache(updated_at desc);
+create index if not exists idx_store_detail_snapshots_expires_at on public.store_detail_snapshots(expires_at desc);
