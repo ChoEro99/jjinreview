@@ -126,6 +126,40 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
     );
   };
 
+  // If not logged in, show login prompt only
+  if (!session?.user) {
+    return (
+      <div
+        style={{
+          border: "1px solid rgba(140, 112, 81, 0.4)",
+          borderRadius: 14,
+          padding: 32,
+          background: "rgba(71, 104, 44, 0.1)",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 600, color: "#28502E", marginBottom: 20 }}>
+          리뷰를 작성하려면 로그인이 필요합니다.
+        </div>
+        <button
+          onClick={() => signIn("google", { callbackUrl: window.location.href })}
+          style={{
+            padding: "12px 24px",
+            background: "#28502E",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: 8,
+            cursor: "pointer",
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          구글로 로그인
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -135,29 +169,11 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
         background: "rgba(71, 104, 44, 0.1)",
       }}
     >
-      {/* Login/User info */}
+      {/* User info */}
       <div style={{ marginBottom: 20 }}>
-        {session?.user ? (
-          <div style={{ fontSize: 16, fontWeight: 600, color: "#28502E" }}>
-            👤 {session.user.name || session.user.email}
-          </div>
-        ) : (
-          <button
-            onClick={() => signIn("google")}
-            style={{
-              padding: "10px 20px",
-              background: "#28502E",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: 8,
-              cursor: "pointer",
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            구글로 로그인
-          </button>
-        )}
+        <div style={{ fontSize: 16, fontWeight: 600, color: "#28502E" }}>
+          👤 {session.user.name || session.user.email}
+        </div>
       </div>
 
       {/* Star rating */}

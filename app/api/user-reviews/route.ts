@@ -1,20 +1,20 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { createHash } from "crypto";
 import { supabaseServer } from "@/src/lib/supabaseServer";
 import { authOptions } from "../auth/[...nextauth]/route";
-
-function getIpHash(req: Request): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  const realIp = req.headers.get("x-real-ip");
-  const ip = forwarded?.split(",")[0].trim() || realIp || "unknown";
-  return createHash("sha256").update(ip).digest("hex");
-}
 
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     const userId = session?.user ? (session.user as { id?: string }).id : null;
+
+    // Require login
+    if (!userId) {
+      return NextResponse.json(
+        { ok: false, error: "리뷰를 작성하려면 로그인이 필요합니다." },
+        { status: 401 }
+      );
+    }
 
     const body = await req.json();
     const { storeId, rating, food, price, service, space, waitTime, comment } = body;
@@ -35,47 +35,25 @@ export async function POST(req: Request) {
       );
     }
 
-    const ipHash = getIpHash(req);
     const supabase = supabaseServer();
 
-    // Check for existing review within 7 days
+    // Check for existing review within 7 days (user_id only)
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    if (userId) {
-      // If logged in, check by user_id OR ip_hash
-      const { data: reviewDetails } = await supabase
-        .from("user_reviews")
-        .select("user_id, ip_hash")
-        .eq("store_id", storeId)
-        .gte("created_at", sevenDaysAgo.toISOString());
-      
-      const hasRecentReview = reviewDetails?.some(
-        (r) => r.user_id === userId || r.ip_hash === ipHash
+    const { data: existingReview } = await supabase
+      .from("user_reviews")
+      .select("id")
+      .eq("store_id", storeId)
+      .eq("user_id", userId)
+      .gte("created_at", sevenDaysAgo.toISOString())
+      .maybeSingle();
+
+    if (existingReview) {
+      return NextResponse.json(
+        { ok: false, error: "7일 이내 이미 리뷰를 작성했습니다." },
+        { status: 429 }
       );
-
-      if (hasRecentReview) {
-        return NextResponse.json(
-          { ok: false, error: "7일 이내 이미 리뷰를 작성했습니다." },
-          { status: 429 }
-        );
-      }
-    } else {
-      // If not logged in, check by ip_hash only
-      const { data: existingReview } = await supabase
-        .from("user_reviews")
-        .select("id")
-        .eq("store_id", storeId)
-        .eq("ip_hash", ipHash)
-        .gte("created_at", sevenDaysAgo.toISOString())
-        .maybeSingle();
-
-      if (existingReview) {
-        return NextResponse.json(
-          { ok: false, error: "7일 이내 이미 리뷰를 작성했습니다." },
-          { status: 429 }
-        );
-      }
     }
 
     // Insert new review
@@ -84,7 +62,7 @@ export async function POST(req: Request) {
       .insert({
         store_id: storeId,
         user_id: userId,
-        ip_hash: ipHash,
+        ip_hash: null, // No longer using IP hash
         rating,
         food: food || null,
         price: price || null,
