@@ -136,7 +136,6 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [selectedStoreId, setSelectedStoreId] = useState<number | null>(null);
   const [storeDetail, setStoreDetail] = useState<StoreDetail | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-  const [fetchError, setFetchError] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
   const [hoveredCompareId, setHoveredCompareId] = useState<number | string | null>(null);
@@ -320,7 +319,6 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     setIsReviewFormOpen(false);
     setShowAllComparedStores(false);
     setFailedPhotos(new Set());
-    setFetchError(false);
 
     const cached = storeDetailCache.current.get(storeId);
     if (cached) {
@@ -362,18 +360,15 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
           storeDetailCache.current.set(storeId, data);
           if (selectedStoreIdRef.current === storeId) {
             setStoreDetail(data);
-            setFetchError(false);
           }
         } else {
           if (selectedStoreIdRef.current === storeId) {
             setStoreDetail(null);
-            setFetchError(true);
           }
         }
       } else {
         if (selectedStoreIdRef.current === storeId) {
           setStoreDetail(null);
-          setFetchError(true);
         }
       }
     } catch (error) {
@@ -381,7 +376,6 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       if (isAbortLikeError(error)) return;
       if (selectedStoreIdRef.current === storeId) {
         setStoreDetail(null);
-        setFetchError(true);
       }
     } finally {
       // 현재 선택된 가게의 요청만 로딩 해제
@@ -413,7 +407,6 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
     // Otherwise, it's a Google place ID - search/register to get the numeric ID
     setIsLoadingDetail(true);
-    setFetchError(false);
     setStoreDetail(null);
 
     try {
@@ -447,17 +440,14 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
           handleStoreClick(targetStore.id);
         } else {
           console.error("No stores found for comparison store:", storeName);
-          setFetchError(true);
           setIsLoadingDetail(false);
         }
       } else {
         console.error("Failed to search for comparison store:", response.status, response.statusText);
-        setFetchError(true);
         setIsLoadingDetail(false);
       }
     } catch (error) {
       console.error("Error handling comparison store click:", error);
-      setFetchError(true);
       setIsLoadingDetail(false);
     }
   };
@@ -1405,30 +1395,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
           {!isLoadingDetail && !storeDetail && showDetailPane && (
             <div style={{ textAlign: "center", padding: 40, color: "#8C7051" }}>
-              {fetchError ? (
-                <>
-                  <div style={{ marginBottom: 16 }}>
-                    가게 정보를 불러오는 데 실패했습니다. 다시 시도해주세요.
-                  </div>
-                  <button
-                    onClick={() => selectedStoreId !== null && handleStoreClick(selectedStoreId)}
-                    style={{
-                      background: "#28502E",
-                      color: "#ffffff",
-                      border: "none",
-                      padding: "12px 24px",
-                      borderRadius: 8,
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    다시 시도
-                  </button>
-                </>
-              ) : (
-                "가게 정보를 불러오지 못했습니다."
-              )}
+              가게 정보를 불러오는 중입니다...
             </div>
           )}
         </section>
