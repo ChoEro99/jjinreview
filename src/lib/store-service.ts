@@ -120,15 +120,17 @@ function queryRelevanceScore(query: string, name: string | null, address: string
   return score;
 }
 
-function isRestaurantLikeName(name: string) {
+type StoreCategory = "restaurant" | "cafe";
+
+function inferStoreCategoryByName(name: string): StoreCategory {
+  const text = name.toLowerCase();
+  const cafeKeywords = ["카페", "coffee", "스타벅스", "투썸", "메가커피", "빽다방"];
+  return cafeKeywords.some((word) => text.includes(word)) ? "cafe" : "restaurant";
+}
+
+function isSearchableStoreName(name: string) {
   const text = name.toLowerCase();
   const excluded = [
-    "카페",
-    "coffee",
-    "스타벅스",
-    "투썸",
-    "메가커피",
-    "빽다방",
     "편의점",
     "마트",
     "약국",
@@ -1008,7 +1010,7 @@ async function findRegisteredStoresByKeyword(keyword: string, limit = 20) {
   }
 
   return Array.from(dedup.values())
-    .filter((row) => isRestaurantLikeName(row.name))
+    .filter((row) => isSearchableStoreName(row.name))
     .slice(0, limit);
 }
 
@@ -2100,7 +2102,7 @@ async function findGooglePlaceForStore(apiKey: string, store: { name: string; ad
     languageCode: "ko",
     regionCode: "KR",
     maxResultCount: 1,
-    includedType: "restaurant",
+    includedType: inferStoreCategoryByName(store.name),
     strictTypeFiltering: true,
   };
 
@@ -2356,6 +2358,7 @@ async function importNearbyRestaurantsForStore(store: StoreBase) {
 
   const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) return { imported: 0 };
+  const targetCategory = inferStoreCategoryByName(store.name);
 
   const nearbyRes = await fetchGoogleJsonWithRetry<{
     places?: Array<{
@@ -2374,7 +2377,7 @@ async function importNearbyRestaurantsForStore(store: StoreBase) {
         "places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location",
     },
     body: JSON.stringify({
-      includedTypes: ["restaurant"],
+      includedTypes: [targetCategory],
       maxResultCount: 20,
       languageCode: "ko",
       regionCode: "KR",
@@ -2457,6 +2460,7 @@ async function computeTopRankWithin1KmBySameLabel(store: StoreBase) {
     store.externalRating,
     store.externalReviewCount ?? 0
   );
+  const baseCategory = inferStoreCategoryByName(store.name);
 
   const nearbyRaw = (data as Array<Record<string, unknown>>)
     .map((row) => ({
@@ -2467,6 +2471,8 @@ async function computeTopRankWithin1KmBySameLabel(store: StoreBase) {
       longitude: toNumber(row.longitude),
       rating: toNumber(row.external_rating),
       reviewCount: toNumber(row.external_review_count, 0) ?? 0,
+      category:
+        typeof row.name === "string" ? inferStoreCategoryByName(row.name) : ("restaurant" as StoreCategory),
     }))
     .filter(
       (row) =>
@@ -2475,6 +2481,7 @@ async function computeTopRankWithin1KmBySameLabel(store: StoreBase) {
         typeof row.rating === "number" &&
         distanceKm(lat, lon, row.latitude, row.longitude) <= radiusKm
     )
+    .filter((row) => row.category === baseCategory)
     .filter((row) => reliabilityLabelBySnapshot(row.rating, row.reviewCount) === baseLabel)
     .sort((a, b) => {
       if ((b.rating as number) !== (a.rating as number)) {
@@ -2527,7 +2534,7 @@ async function computeTopRankWithin1KmBySameLabel(store: StoreBase) {
             "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount",
         },
         body: JSON.stringify({
-          includedTypes: ["restaurant"],
+          includedTypes: [baseCategory],
           maxResultCount: 20,
           languageCode: "ko",
           regionCode: "KR",
@@ -2663,7 +2670,7 @@ async function computeTopRankWithin1KmBySameLabel(store: StoreBase) {
           "places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount",
       },
       body: JSON.stringify({
-        includedTypes: ["restaurant"],
+        includedTypes: [baseCategory],
         maxResultCount: 20,
         languageCode: "ko",
         regionCode: "KR",
@@ -2794,8 +2801,6 @@ async function searchGooglePlacesByKeyword(keyword: string, size = 10) {
           languageCode: "ko",
           regionCode: "KR",
           maxResultCount: 20,
-          includedType: "restaurant",
-          strictTypeFiltering: true,
           ...(pageToken ? { pageToken } : {}),
         }),
       }
@@ -2824,6 +2829,7 @@ async function searchGooglePlacesByKeyword(keyword: string, size = 10) {
     });
 
     for (const item of mapped) {
+      if (!item.name || !isSearchableStoreName(item.name)) continue;
       const key = `${item.name ?? ""}|${item.address ?? ""}`;
       if (dedup.has(key)) continue;
       dedup.add(key);
@@ -2899,7 +2905,7 @@ async function searchGoogleNearbyRestaurantsAroundAddress(keyword: string, size 
         "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location",
       },
       body: JSON.stringify({
-        includedTypes: ["restaurant"],
+        includedTypes: ["restaurant", "cafe"],
         maxResultCount: Math.max(1, Math.min(20, Math.floor(size))),
         languageCode: "ko",
         regionCode: "KR",
