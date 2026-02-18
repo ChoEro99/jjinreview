@@ -40,10 +40,13 @@ interface StoreDetail {
       reasonSummary: string;
     } | null;
   }>;
-  photos?: Array<{
-    url: string;
-    label: string;
-  }>;
+  photos?: Array<
+    | string
+    | {
+        url: string;
+        label?: string;
+      }
+  >;
 }
 
 const ADSENSE_CLIENT = "ca-pub-6051453612452994";
@@ -80,6 +83,9 @@ export default async function StorePage({ params }: Props) {
   const adPct = Math.round(detail.summary.adSuspectRatio * 100);
   const trustPoint = Math.round(detail.summary.trustScore * 100);
   const hasAnyReview = detail.summary.reviewCount > 0;
+  const photoUrls = (detail.photos ?? [])
+    .map((photo) => (typeof photo === "string" ? photo : photo?.url))
+    .filter((url): url is string => typeof url === "string" && url.length > 0);
 
   return (
     <main style={{ padding: 24, maxWidth: 980, margin: "0 auto" }}>
@@ -104,12 +110,12 @@ export default async function StorePage({ params }: Props) {
       <div style={{ marginTop: 6, color: "#8C7051" }}>{detail.store.address ?? "-"}</div>
 
       {/* 가게 사진 */}
-      {detail.photos && detail.photos.length > 0 && (
+      {photoUrls.length > 0 && (
         <div style={{ marginTop: 20, marginBottom: 20 }}>
           {/* 대표 사진 */}
-          {detail.photos[0] && (
+          {photoUrls[0] && (
             <Image
-              src={detail.photos[0].url}
+              src={photoUrls[0]}
               alt={`${detail.store.name} 대표 사진`}
               unoptimized
               width={1200}
@@ -125,12 +131,12 @@ export default async function StorePage({ params }: Props) {
             />
           )}
           {/* 리뷰 사진 */}
-          {detail.photos.length > 1 && (
+          {photoUrls.length > 1 && (
             <div style={{ display: "flex", gap: 8 }}>
-              {detail.photos.slice(1, 3).map((photo, idx) => (
+              {photoUrls.slice(1, 3).map((photoUrl, idx) => (
                 <Image
                   key={idx}
-                  src={photo.url}
+                  src={photoUrl}
                   alt={`${detail.store.name} 리뷰 사진 ${idx + 1}`}
                   unoptimized
                   width={600}
