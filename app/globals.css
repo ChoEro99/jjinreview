@@ -50,3 +50,7 @@ body {
   background: rgba(71, 104, 44, 0.1);
 }
 
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+

@@ -72,6 +72,10 @@ interface StoreDetail {
     rating: number;
     content: string;
     authorName: string | null;
+    authorStats?: {
+      reviewCount: number;
+      averageRating: number;
+    } | null;
     latestAnalysis: {
       adRisk: number;
       undisclosedAdRisk: number;
@@ -97,12 +101,21 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [failedPhotos, setFailedPhotos] = useState<Set<number>>(new Set());
+  const [isListDragging, setIsListDragging] = useState(false);
   
   // Cache for store details to avoid re-fetching
   const storeDetailCache = useRef<Map<number, StoreDetail>>(new Map());
   // Track the currently selected store for async operations
   const selectedStoreIdRef = useRef<number | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const storeListRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<{ startY: number; startScrollTop: number; isDragging: boolean; moved: boolean }>({
+    startY: 0,
+    startScrollTop: 0,
+    isDragging: false,
+    moved: false,
+  });
+  const suppressCardClickRef = useRef(false);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -187,6 +200,39 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       console.error("Search error:", error);
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const handleListMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !storeListRef.current) return;
+    dragStateRef.current = {
+      startY: e.clientY,
+      startScrollTop: storeListRef.current.scrollTop,
+      isDragging: true,
+      moved: false,
+    };
+    setIsListDragging(false);
+  };
+
+  const handleListMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!dragStateRef.current.isDragging || !storeListRef.current) return;
+    const deltaY = e.clientY - dragStateRef.current.startY;
+    if (Math.abs(deltaY) > 4) {
+      dragStateRef.current.moved = true;
+      setIsListDragging(true);
+      suppressCardClickRef.current = true;
+    }
+    storeListRef.current.scrollTop = dragStateRef.current.startScrollTop - deltaY;
+  };
+
+  const handleListMouseUpOrLeave = () => {
+    if (!dragStateRef.current.isDragging) return;
+    dragStateRef.current.isDragging = false;
+    setIsListDragging(false);
+    if (dragStateRef.current.moved) {
+      window.setTimeout(() => {
+        suppressCardClickRef.current = false;
+      }, 0);
     }
   };
 
@@ -438,7 +484,21 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
               총 {stores.length}개 가게
             </div>
 
-            <div style={{ maxHeight: `calc(100vh - ${HEADER_AND_SEARCH_HEIGHT}px)`, overflowY: "auto" }}>
+            <div
+              ref={storeListRef}
+              className="hide-scrollbar"
+              onMouseDown={handleListMouseDown}
+              onMouseMove={handleListMouseMove}
+              onMouseUp={handleListMouseUpOrLeave}
+              onMouseLeave={handleListMouseUpOrLeave}
+              style={{
+                maxHeight: `calc(100vh - ${HEADER_AND_SEARCH_HEIGHT}px)`,
+                overflowY: "auto",
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
+                cursor: isListDragging ? "grabbing" : "grab",
+              }}
+            >
               {stores.map((store) => {
                 const isSelected = selectedStoreId === store.id;
                 const isHovered = hoveredCardId === store.id;
@@ -452,7 +512,10 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 return (
                   <div
                     key={store.id}
-                    onClick={() => handleStoreClick(store.id)}
+                    onClick={() => {
+                      if (suppressCardClickRef.current) return;
+                      handleStoreClick(store.id);
+                    }}
                     onMouseEnter={() => setHoveredCardId(store.id)}
                     onMouseLeave={() => setHoveredCardId(null)}
                     style={{
@@ -977,15 +1040,11 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                         >
                           <strong>{review.rating.toFixed(1)}점</strong>
                           <span>{review.source === "external" ? "외부" : "앱"}</span>
-                          <span>
-                            광고의심 {adAny !== null ? `${Math.round(adAny * 100)}%` : "분석 대기"}
-                          </span>
-                          <span>
-                            신뢰도{" "}
-                            {review.latestAnalysis
-                              ? `${Math.round(review.latestAnalysis.trustScore * 100)}점`
-                              : "분석 대기"}
-                          </span>
+                          {review.authorStats && (
+                            <span>
+                              작성자 리뷰 {review.authorStats.reviewCount}개 · 평균 {review.authorStats.averageRating.toFixed(1)}점
+                            </span>
+                          )}
                         </div>
                         <p style={{ lineHeight: 1.5, margin: "8px 0", color: "#28502E" }}>{review.content}</p>
                         {review.latestAnalysis && (

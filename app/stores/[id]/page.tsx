@@ -27,6 +27,10 @@ interface StoreDetail {
     rating: number;
     content: string;
     authorName: string | null;
+    authorStats?: {
+      reviewCount: number;
+      averageRating: number;
+    } | null;
     latestAnalysis: {
       adRisk: number;
       undisclosedAdRisk: number;
@@ -194,15 +198,11 @@ export default async function StorePage({ params }: Props) {
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 14, color: "#2d2d2d" }}>
                   <strong>{review.rating.toFixed(1)}점</strong>
                   <span>{review.source === "external" ? "외부" : "앱"}</span>
-                  <span>
-                    광고의심 {adAny !== null ? `${Math.round(adAny * 100)}%` : "분석 대기"}
-                  </span>
-                  <span>
-                    신뢰도{" "}
-                    {review.latestAnalysis
-                      ? `${Math.round(review.latestAnalysis.trustScore * 100)}점`
-                      : "분석 대기"}
-                  </span>
+                  {review.authorStats && (
+                    <span>
+                      작성자 리뷰 {review.authorStats.reviewCount}개 · 평균 {review.authorStats.averageRating.toFixed(1)}점
+                    </span>
+                  )}
                 </div>
                 <p style={{ marginTop: 8, lineHeight: 1.5, color: "#2d2d2d" }}>{review.content}</p>
                 {review.latestAnalysis ? (

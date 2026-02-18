@@ -45,6 +45,10 @@ export type ReviewRecord = {
   isDisclosedAd: boolean;
   createdAt: string;
   latestAnalysis: ReviewAnalysisRecord | null;
+  authorStats?: {
+    reviewCount: number;
+    averageRating: number;
+  } | null;
 };
 
 export type StoreSummary = {
@@ -298,6 +302,12 @@ function normalizeReviewRow(row: Record<string, unknown>): Omit<ReviewRecord, "l
     createdAt:
       typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
   };
+}
+
+function normalizeAuthorKey(name: string | null | undefined) {
+  if (!name) return null;
+  const normalized = name.trim().toLowerCase().replace(/\s+/g, " ");
+  return normalized.length ? normalized : null;
 }
 
 function normalizeUserReviewRow(row: Record<string, unknown>): Omit<ReviewRecord, "latestAnalysis"> {
@@ -622,6 +632,77 @@ async function enrichReviews(baseReviews: Omit<ReviewRecord, "latestAnalysis">[]
     ...review,
     latestAnalysis: analysisMap.get(review.id) ?? null,
   }));
+}
+
+async function loadAuthorStatsForReviews(reviews: ReviewRecord[]) {
+  const authorNamesMap = new Map<string, string>();
+  for (const review of reviews) {
+    const key = normalizeAuthorKey(review.authorName);
+    if (!key) continue;
+    if (!authorNamesMap.has(key)) authorNamesMap.set(key, review.authorName ?? key);
+  }
+
+  if (!authorNamesMap.size) return new Map<string, { reviewCount: number; averageRating: number }>();
+
+  const sb = supabaseServer();
+  const authorNames = Array.from(authorNamesMap.values());
+  const aggregate = new Map<string, { count: number; sum: number }>();
+
+  const addStat = (authorName: string | null | undefined, ratingRaw: unknown) => {
+    const key = normalizeAuthorKey(authorName);
+    const rating = toNumber(ratingRaw);
+    if (!key || rating === null) return;
+    const prev = aggregate.get(key) ?? { count: 0, sum: 0 };
+    prev.count += 1;
+    prev.sum += rating;
+    aggregate.set(key, prev);
+  };
+
+  for (const tableName of REVIEW_TABLE_CANDIDATES) {
+    const tableRows = await sb
+      .from(tableName)
+      .select("author_name, rating")
+      .in("author_name", authorNames);
+    if (!tableRows.error) {
+      for (const row of (tableRows.data ?? []) as Array<Record<string, unknown>>) {
+        addStat(typeof row.author_name === "string" ? row.author_name : null, row.rating);
+      }
+      break;
+    }
+    if (!isMissingTableError(tableRows.error)) break;
+  }
+
+  const usersResponse = await sb.from("users").select("id, name").in("name", authorNames);
+  if (!usersResponse.error) {
+    const userRows = (usersResponse.data ?? []) as Array<Record<string, unknown>>;
+    const userIdToName = new Map<string, string>();
+    for (const row of userRows) {
+      if (typeof row.id === "string" && typeof row.name === "string") {
+        userIdToName.set(row.id, row.name);
+      }
+    }
+    const userIds = Array.from(userIdToName.keys());
+    if (userIds.length) {
+      const userReviews = await sb.from("user_reviews").select("user_id, rating").in("user_id", userIds);
+      if (!userReviews.error) {
+        for (const row of (userReviews.data ?? []) as Array<Record<string, unknown>>) {
+          const userId = typeof row.user_id === "string" ? row.user_id : null;
+          const userName = userId ? userIdToName.get(userId) : null;
+          addStat(userName ?? null, row.rating);
+        }
+      }
+    }
+  }
+
+  return new Map(
+    Array.from(aggregate.entries()).map(([key, value]) => [
+      key,
+      {
+        reviewCount: value.count,
+        averageRating: round2(value.sum / Math.max(1, value.count)),
+      },
+    ])
+  );
 }
 
 async function loadRecentReviewsForBatch(limit: number) {
@@ -1065,13 +1146,21 @@ export async function getStoreDetail(id: number) {
   // We load them here regardless of cache status because they're always needed in the response
   const baseReviews = await loadReviewsByStoreIds([id]);
   const reviews = await enrichReviews(baseReviews);
-  reviews.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  const authorStatsMap = await loadAuthorStatsForReviews(reviews);
+  const reviewsWithAuthorStats = reviews.map((review) => {
+    const key = normalizeAuthorKey(review.authorName);
+    return {
+      ...review,
+      authorStats: key ? (authorStatsMap.get(key) ?? null) : null,
+    };
+  });
+  reviewsWithAuthorStats.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   
   // If we have a valid cached snapshot, use it and return early
   if (cachedSnapshot) {
     return {
       ...cachedSnapshot,
-      reviews, // Always return fresh reviews
+      reviews: reviewsWithAuthorStats, // Always return fresh reviews
     };
   }
   
@@ -1157,7 +1246,11 @@ export async function getStoreDetail(id: number) {
   const photos = photosResult.photos;
   const photosFull = photosResult.photosFull;
 
-  const summary = summarizeReviews(reviews, normalizedStore.externalRating, normalizedStore.externalReviewCount ?? null);
+  const summary = summarizeReviews(
+    reviewsWithAuthorStats,
+    normalizedStore.externalRating,
+    normalizedStore.externalReviewCount ?? null
+  );
   
   // Try to compute rank insight, fallback to null on error
   let rankInsight: Awaited<ReturnType<typeof computeTopRankWithin1KmBySameLabel>> = null;
@@ -1201,7 +1294,7 @@ export async function getStoreDetail(id: number) {
 
   return {
     ...snapshot,
-    reviews, // Include fresh reviews in response
+    reviews: reviewsWithAuthorStats, // Include fresh reviews in response
   };
 }
 
