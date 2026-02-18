@@ -934,23 +934,26 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
     }
     
     // Check if snapshot is expired
-    const expiresAt = new Date(data.expires_at);
+    const expiresAtValue = data.expires_at;
+    const expiresAt = new Date(expiresAtValue);
     const now = new Date();
     
     if (now > expiresAt) {
       // Snapshot expired, return null to trigger recalculation
-      void sb
-        .from("store_detail_snapshots")
-        .delete()
-        .eq("store_id", storeId)
-        .then(({ error }) => {
+      void (async () => {
+        try {
+          const { error } = await sb
+            .from("store_detail_snapshots")
+            .delete()
+            .eq("store_id", storeId)
+            .eq("expires_at", expiresAtValue);
           if (error) {
             console.error("Error deleting expired snapshot:", error);
           }
-        })
-        .catch((error) => {
+        } catch (error) {
           console.error("Error deleting expired snapshot:", error);
-        });
+        }
+      })();
       return null;
     }
     
