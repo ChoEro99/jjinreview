@@ -96,12 +96,6 @@ export default async function StorePage({ params }: Props) {
           textDecoration: "none",
           transition: "color 0.2s ease"
         }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.color = "#47682C";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.color = "#8C7051";
-        }}
       >
         ← 목록으로
       </Link>
