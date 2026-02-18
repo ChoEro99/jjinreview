@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 const MAX_DISPLAY_NAME_LENGTH = 10;
 const MY_REVIEWS_CACHE_TTL_MS = 45_000;
@@ -35,6 +36,7 @@ const LABEL_MAP: Record<Exclude<OptionValue, null>, string> = {
 
 export default function AuthButton() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [myReviewsOpen, setMyReviewsOpen] = useState(false);
   const [myReviews, setMyReviews] = useState<MyReview[]>([]);
   const [myReviewsIndex, setMyReviewsIndex] = useState(0);
@@ -133,6 +135,11 @@ export default function AuthButton() {
     window.setTimeout(() => {
       wheelLockRef.current = false;
     }, 160);
+  };
+
+  const goToStoreDetail = (storeId: number) => {
+    setMyReviewsOpen(false);
+    router.push(`/stores/${storeId}`);
   };
 
   if (session?.user) {
@@ -318,9 +325,25 @@ export default function AuthButton() {
                             overflow: "hidden",
                           }}
                         >
-                          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
+                          <button
+                            type="button"
+                            onClick={() => goToStoreDetail(review.storeId)}
+                            style={{
+                              fontSize: 16,
+                              fontWeight: 700,
+                              marginBottom: 6,
+                              background: "transparent",
+                              border: "none",
+                              color: "#28502E",
+                              cursor: "pointer",
+                              padding: 0,
+                              textAlign: "left",
+                              textDecoration: "underline",
+                              textUnderlineOffset: 3,
+                            }}
+                          >
                             {review.storeName ?? `가게 #${review.storeId}`}
-                          </div>
+                          </button>
                           <div style={{ fontSize: 14, marginBottom: 6 }}>
                             평점 {Number(review.rating).toFixed(1)}점
                           </div>
