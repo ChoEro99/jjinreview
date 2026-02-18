@@ -455,6 +455,19 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     window.history.replaceState({}, "", nextUrl);
   }, [handleStoreClick]);
 
+  useEffect(() => {
+    const onOpenStoreDetail = (event: Event) => {
+      const custom = event as CustomEvent<{ storeId?: number }>;
+      const storeId = Number(custom.detail?.storeId);
+      if (!Number.isFinite(storeId) || storeId <= 0) return;
+      void handleStoreClick(storeId);
+    };
+    window.addEventListener("open-store-detail", onOpenStoreDetail as EventListener);
+    return () => {
+      window.removeEventListener("open-store-detail", onOpenStoreDetail as EventListener);
+    };
+  }, [handleStoreClick]);
+
   const showDetailPane = selectedStoreId !== null;
   const LIST_CARD_HEIGHT = 126;
   const LIST_OVERSCAN = 5;

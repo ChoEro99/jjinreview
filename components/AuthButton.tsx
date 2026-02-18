@@ -2,7 +2,6 @@
 
 import { useRef, useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
-import { useRouter } from "next/navigation";
 
 const MAX_DISPLAY_NAME_LENGTH = 10;
 const MY_REVIEWS_CACHE_TTL_MS = 45_000;
@@ -36,7 +35,6 @@ const LABEL_MAP: Record<Exclude<OptionValue, null>, string> = {
 
 export default function AuthButton() {
   const { data: session } = useSession();
-  const router = useRouter();
   const [myReviewsOpen, setMyReviewsOpen] = useState(false);
   const [myReviews, setMyReviews] = useState<MyReview[]>([]);
   const [myReviewsIndex, setMyReviewsIndex] = useState(0);
@@ -139,7 +137,19 @@ export default function AuthButton() {
 
   const goToStoreDetail = (storeId: number) => {
     setMyReviewsOpen(false);
-    router.push(`/?storeId=${storeId}`);
+    if (window.location.pathname === "/") {
+      window.dispatchEvent(
+        new CustomEvent("open-store-detail", {
+          detail: { storeId },
+        })
+      );
+      const params = new URLSearchParams(window.location.search);
+      params.set("storeId", String(storeId));
+      const nextUrl = `/?${params.toString()}`;
+      window.history.replaceState({}, "", nextUrl);
+      return;
+    }
+    window.location.assign(`/?storeId=${storeId}`);
   };
 
   if (session?.user) {
