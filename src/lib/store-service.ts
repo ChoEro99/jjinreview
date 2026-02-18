@@ -919,6 +919,21 @@ type StoreDetailSnapshot = {
   photosFull: string[];
 };
 
+async function deleteExpiredSnapshot(
+  sb: ReturnType<typeof supabaseServer>,
+  storeId: number,
+  now: Date
+) {
+  const { error } = await sb
+    .from("store_detail_snapshots")
+    .delete()
+    .eq("store_id", storeId)
+    .lte("expires_at", now.toISOString());
+  if (error) {
+    throw new Error(`Failed to delete expired snapshot for store ${storeId}: ${error.message}`);
+  }
+}
+
 async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnapshot | null> {
   const sb = supabaseServer();
   
@@ -939,6 +954,12 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
     
     if (now > expiresAt) {
       // Snapshot expired, return null to trigger recalculation
+      void deleteExpiredSnapshot(sb, storeId, now).catch((error) => {
+        console.error(
+          "Background snapshot cleanup failed:",
+          error instanceof Error ? error.message : error
+        );
+      });
       return null;
     }
     
