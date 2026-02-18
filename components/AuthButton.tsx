@@ -291,15 +291,16 @@ export default function AuthButton() {
                             border: "1px solid rgba(140, 112, 81, 0.35)",
                             borderRadius: 14,
                             padding: 14,
-                            background: "rgba(71, 104, 44, 0.08)",
+                            background: isCenter ? "#f6f4ef" : "rgba(71, 104, 44, 0.08)",
                             transform,
                             opacity: isCenter ? 1 : 0.4,
                             boxShadow: isCenter
                               ? "0 10px 28px rgba(25, 35, 20, 0.22)"
                               : "0 4px 12px rgba(25, 35, 20, 0.1)",
-                            zIndex: isCenter ? 3 : 1,
+                            zIndex: isCenter ? 10 : 1,
                             pointerEvents: isCenter ? "auto" : "none",
-                            transition: "transform 0.22s ease, opacity 0.22s ease",
+                            transition:
+                              "transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.34s cubic-bezier(0.22, 1, 0.36, 1)",
                             overflow: "hidden",
                           }}
                         >
