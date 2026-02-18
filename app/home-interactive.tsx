@@ -693,7 +693,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                           </div>
                           {detailReviewCount > 0 && (
                             <div style={{ fontSize: 13, color: "#8C7051", marginTop: 4 }}>
-                              📊 {breakdown.sampleSizeEmoji} {breakdown.sampleSizeDesc} (표본 {breakdown.sampleSize}점) · {breakdown.stabilityEmoji} {breakdown.stabilityDesc} (안정성 {breakdown.stability}점) · {breakdown.freshnessEmoji} {breakdown.freshnessDesc} (최신성 {breakdown.freshness}점)
+                              {breakdown.sampleSizeDesc} (표본 {breakdown.sampleSize}점 {breakdown.sampleSizeEmoji}) · {breakdown.stabilityDesc} (안정성 {breakdown.stability}점 {breakdown.stabilityEmoji}) · {breakdown.freshnessDesc} (최신성 {breakdown.freshness}점 {breakdown.freshnessEmoji})
                             </div>
                           )}
                         </div>
