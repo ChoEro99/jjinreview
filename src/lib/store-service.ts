@@ -955,10 +955,7 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
     if (now > expiresAt) {
       // Snapshot expired, return null to trigger recalculation
       void deleteExpiredSnapshot(sb, storeId, now).catch((error) => {
-        console.error(
-          `Error deleting expired snapshot for store ${storeId} (will retry on next request):`,
-          error
-        );
+        console.error(error);
       });
       return null;
     }
