@@ -106,14 +106,6 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
     setter(current === value ? null : value);
   };
 
-  const handleSubmitMinimal = async () => {
-    if (rating === 0) {
-      setNotice({ type: "error", message: "별점을 선택해주세요." });
-      return;
-    }
-    await handleSubmit();
-  };
-
   const handleSubmit = async () => {
     if (rating === 0) {
       setNotice({ type: "error", message: "별점을 선택해주세요." });
@@ -323,7 +315,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
       style={{
         border: "1px solid rgba(140, 112, 81, 0.4)",
         borderRadius: 14,
-        padding: 24,
+        padding: 16,
         background: "rgba(71, 104, 44, 0.1)",
       }}
     >
@@ -363,18 +355,18 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
         </div>
       )}
       {/* User info */}
-      <div style={{ marginBottom: 20 }}>
+      <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 16, fontWeight: 600, color: "#28502E" }}>
           👤 {session.user.name || session.user.email}
         </div>
       </div>
 
       {/* Star rating */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: "#28502E", marginBottom: 8 }}>
           ⭐ 별점 (필수)
         </div>
-        <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+        <div style={{ display: "flex", gap: 2, marginBottom: 6 }}>
           {[1, 2, 3, 4, 5].map((starIndex) => {
             const displayRating = hoverRating || rating;
             const filled = starIndex <= Math.floor(displayRating);
@@ -387,7 +379,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
                 onMouseMove={(e) => handleStarHover(e, starIndex)}
                 onMouseLeave={() => setHoverRating(0)}
                 style={{
-                  fontSize: 40,
+                  fontSize: 34,
                   cursor: "pointer",
                   userSelect: "none",
                   position: "relative",
@@ -430,16 +422,16 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
       <div
         style={{
           borderTop: "1px dashed rgba(140, 112, 81, 0.3)",
-          paddingTop: 16,
-          marginBottom: 16,
+          paddingTop: 12,
+          marginBottom: 12,
         }}
       >
-        <div style={{ fontSize: 14, color: "#8C7051", marginBottom: 16 }}>
+        <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 10 }}>
           선택
         </div>
 
         {/* Food */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#28502E", marginBottom: 8 }}>
             음식
           </div>
@@ -451,7 +443,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
         </div>
 
         {/* Price */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#28502E", marginBottom: 8 }}>
             가격
           </div>
@@ -463,7 +455,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
         </div>
 
         {/* Service */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#28502E", marginBottom: 8 }}>
             서비스
           </div>
@@ -475,7 +467,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
         </div>
 
         {/* Space */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#28502E", marginBottom: 8 }}>
             공간
           </div>
@@ -487,7 +479,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
         </div>
 
         {/* Wait time */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#28502E", marginBottom: 8 }}>
             대기시간
           </div>
@@ -499,7 +491,7 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
         </div>
 
         {/* Comment */}
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#28502E", marginBottom: 8 }}>
             한줄 코멘트
           </div>
@@ -520,33 +512,13 @@ export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormPro
         </div>
       </div>
 
-      {/* Submit buttons */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <button
-          onClick={handleSubmitMinimal}
-          disabled={isSubmitting}
-          style={{
-            flex: 1,
-            minWidth: 150,
-            padding: "12px 20px",
-            background: "transparent",
-            border: "2px solid #28502E",
-            borderRadius: 8,
-            color: "#28502E",
-            cursor: isSubmitting ? "not-allowed" : "pointer",
-            fontSize: 14,
-            fontWeight: 700,
-            opacity: isSubmitting ? 0.6 : 1,
-          }}
-        >
-          여기까지만 리뷰할래요
-        </button>
+      {/* Submit button */}
+      <div style={{ display: "flex" }}>
         <button
           onClick={handleSubmit}
           disabled={isSubmitting}
           style={{
-            flex: 1,
-            minWidth: 150,
+            width: "100%",
             padding: "12px 20px",
             background: "#28502E",
             border: "none",

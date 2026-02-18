@@ -1304,9 +1304,18 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
             address: cachedSnapshot.store.address,
             fallback: cachedSnapshot.latestGoogleReviews,
           });
+    const normalizedTrustScore = computeRatingTrustScore(
+      cachedSnapshot.store.externalRating,
+      cachedSnapshot.store.externalReviewCount ?? 0,
+      { lastSyncedAt: new Date().toISOString() }
+    );
     return {
       ...cachedSnapshot,
       latestGoogleReviews,
+      insight: {
+        ...cachedSnapshot.insight,
+        ratingTrustScore: normalizedTrustScore,
+      },
       summary: {
         ...cachedSnapshot.summary,
         appAverageRating: freshSummary.appAverageRating,
