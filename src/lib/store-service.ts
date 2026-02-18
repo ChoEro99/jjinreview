@@ -924,19 +924,12 @@ async function deleteExpiredSnapshot(
   storeId: number,
   now: Date
 ) {
-  try {
-    const { error } = await sb
-      .from("store_detail_snapshots")
-      .delete()
-      .eq("store_id", storeId)
-      .lte("expires_at", now.toISOString());
-    if (error) throw error;
-  } catch (error) {
-    console.error(
-      `Error deleting expired snapshot for store ${storeId} (will retry on next request):`,
-      error
-    );
-  }
+  const { error } = await sb
+    .from("store_detail_snapshots")
+    .delete()
+    .eq("store_id", storeId)
+    .lte("expires_at", now.toISOString());
+  if (error) throw error;
 }
 
 async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnapshot | null> {
@@ -959,7 +952,12 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
     
     if (now > expiresAt) {
       // Snapshot expired, return null to trigger recalculation
-      void deleteExpiredSnapshot(sb, storeId, now);
+      void deleteExpiredSnapshot(sb, storeId, now).catch((error) => {
+        console.error(
+          `Error deleting expired snapshot for store ${storeId} (will retry on next request):`,
+          error
+        );
+      });
       return null;
     }
     
