@@ -3,12 +3,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 
-// Rating trust score label mapping
-const RATING_TRUST_LABEL_MAPPING: Record<string, string> = {
-  "매우 신뢰": "안정적 평점",
-  "신뢰 가능": "안정적 평점",
-};
-
 interface StoreBase {
   id: number;
   name: string;
@@ -370,7 +364,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       >
         <h1 style={{ fontSize: 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>리뷰랩</h1>
         <p style={{ marginTop: 8, fontSize: 16, opacity: 1, color: "#e8dfc9" }}>
-          이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 수치
+          이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 지수
         </p>
       </header>
 
@@ -485,7 +479,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                         {/* Use max of summary (cached) and direct externalReviewCount to handle stale cache */}
                         리뷰 {Math.max(store.summary.reviewCount, store.summary.externalReviewCount, store.externalReviewCount ?? 0)}
                       </span>
-                      <span style={{ color: "#28502E" }}>{ratingTrust.emoji} {ratingTrust.totalScore}점</span>
+                      <span style={{ color: "#28502E" }}>평점 믿음 지수 {ratingTrust.emoji} {ratingTrust.label} ({ratingTrust.totalScore}점)</span>
                     </div>
                   </div>
                 );
@@ -587,13 +581,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
                     {/* 평점신뢰도 */}
                     {storeDetail.insight?.ratingTrustScore && (() => {
-                      const mappedLabel = RATING_TRUST_LABEL_MAPPING[storeDetail.insight.ratingTrustScore.label] || storeDetail.insight.ratingTrustScore.label;
-                      const { totalScore, breakdown } = storeDetail.insight.ratingTrustScore;
+                      const { label, emoji, totalScore, breakdown } = storeDetail.insight.ratingTrustScore;
                       
                       return (
                         <div style={{ marginBottom: 12 }}>
                           <div style={{ fontSize: 18, fontWeight: 700, color: "#28502E" }}>
-                            {storeDetail.insight.ratingTrustScore.emoji} {mappedLabel} ({totalScore}점)
+                            평점 믿음 지수 {emoji} {label} ({totalScore}점)
                           </div>
                           <div style={{ fontSize: 13, color: "#8C7051", marginTop: 4 }}>
                             표본 {breakdown.sampleSize}점 · 자연스러움 {breakdown.naturalness}점
