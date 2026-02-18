@@ -85,3 +85,34 @@ create index if not exists idx_review_analyses_store_id_created_at on public.rev
 create index if not exists idx_google_review_cache_updated_at on public.google_review_cache(updated_at desc);
 create index if not exists idx_naver_signal_cache_updated_at on public.naver_signal_cache(updated_at desc);
 create index if not exists idx_store_detail_snapshots_expires_at on public.store_detail_snapshots(expires_at desc);
+
+-- 유저 테이블 (NextAuth용)
+create table if not exists public.users (
+  id text primary key,
+  email text unique,
+  name text,
+  image text,
+  provider text,
+  created_at timestamptz not null default now()
+);
+
+-- 앱 내 유저 리뷰 테이블 (기존 reviews 테이블과 분리)
+create table if not exists public.user_reviews (
+  id bigint generated always as identity primary key,
+  store_id bigint not null references public.stores(id) on delete cascade,
+  user_id text references public.users(id) on delete set null,
+  ip_hash text,
+  rating numeric(2, 1) not null check (rating >= 0.5 and rating <= 5.0),
+  food text check (food in ('good', 'normal', 'bad') or food is null),
+  price text check (price in ('expensive', 'normal', 'cheap') or price is null),
+  service text check (service in ('good', 'normal', 'bad') or service is null),
+  space text check (space in ('enough', 'normal', 'narrow') or space is null),
+  wait_time text check (wait_time in ('short', 'normal', 'long') or wait_time is null),
+  comment text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_user_reviews_store_id on public.user_reviews(store_id);
+create index if not exists idx_user_reviews_user_id on public.user_reviews(user_id);
+create index if not exists idx_user_reviews_ip_hash on public.user_reviews(ip_hash);
+create index if not exists idx_user_reviews_created_at on public.user_reviews(created_at desc);
