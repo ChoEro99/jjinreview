@@ -2215,6 +2215,8 @@ function getCachedGooglePlace(cacheKey: string): GooglePlace | null | undefined 
 }
 
 function setCachedGooglePlace(cacheKey: string, place: GooglePlace | null): void {
+  // Avoid poisoning cache with null results from strict filters.
+  if (place === null) return;
   // Enforce max cache size with simple LRU: remove oldest entries
   // Note: O(n) iteration is acceptable for a small cache size of 500 entries
   if (googlePlaceCache.size >= GOOGLE_PLACE_CACHE_MAX_SIZE) {
@@ -2250,7 +2252,7 @@ async function findGooglePlaceForStore(apiKey: string, store: { name: string; ad
   }
   
   const query = `${store.name} ${store.address ?? ""}`.trim();
-  const payload = {
+  const strictPayload = {
     textQuery: query,
     languageCode: "ko",
     regionCode: "KR",
@@ -2259,7 +2261,7 @@ async function findGooglePlaceForStore(apiKey: string, store: { name: string; ad
     strictTypeFiltering: true,
   };
 
-  const search = await fetchGoogleJsonWithRetry<GooglePlaceSearchResponse>(
+  const strictSearch = await fetchGoogleJsonWithRetry<GooglePlaceSearchResponse>(
     "https://places.googleapis.com/v1/places:searchText",
     {
       method: "POST",
@@ -2269,11 +2271,32 @@ async function findGooglePlaceForStore(apiKey: string, store: { name: string; ad
         "X-Goog-FieldMask":
           "places.id,places.name,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location,places.photos",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(strictPayload),
     }
   );
 
-  const result = search.places?.[0] ?? null;
+  let result = strictSearch.places?.[0] ?? null;
+  if (!result) {
+    const looseSearch = await fetchGoogleJsonWithRetry<GooglePlaceSearchResponse>(
+      "https://places.googleapis.com/v1/places:searchText",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask":
+            "places.id,places.name,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location,places.photos",
+        },
+        body: JSON.stringify({
+          textQuery: query,
+          languageCode: "ko",
+          regionCode: "KR",
+          maxResultCount: 1,
+        }),
+      }
+    );
+    result = looseSearch.places?.[0] ?? null;
+  }
   setCachedGooglePlace(cacheKey, result);
   return result;
 }
