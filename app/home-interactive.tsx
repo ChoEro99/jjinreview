@@ -692,10 +692,10 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                     {storeDetail.insight?.rating !== null && storeDetail.insight?.rating !== undefined && (
                       <>
                         <div style={{ fontSize: 44, fontWeight: 800, color: "#28502E", marginBottom: 4 }}>
-                          ⭐ {storeDetail.insight.rating.toFixed(1)} <span style={{ fontSize: 22, fontWeight: 700, color: "#8C7051" }}>({externalCount}개)</span>
+                          ⭐ {storeDetail.insight.rating.toFixed(1)} <span style={{ fontSize: 22, fontWeight: 700, color: "#28502E" }}>({externalCount}개)</span>
                         </div>
                         <div style={{ fontSize: 20, fontWeight: 800, color: "#47682C", marginBottom: 12 }}>
-                          ★ 앱 점수 {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"} <span style={{ fontSize: 16, fontWeight: 700, color: "#8C7051" }}>({inappCount}개)</span>
+                          ★ 앱 점수 {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"} <span style={{ fontSize: 16, fontWeight: 700, color: "#47682C" }}>({inappCount}개)</span>
                         </div>
                       </>
                     )}
