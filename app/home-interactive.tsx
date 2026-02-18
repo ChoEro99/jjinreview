@@ -16,6 +16,7 @@ interface StoreBase {
 
 interface StoreSummary {
   weightedRating: number | null;
+  appAverageRating: number | null;
   adSuspectRatio: number;
   trustScore: number;
   positiveRatio: number;
@@ -42,6 +43,7 @@ interface StoreDetail {
     adSuspectRatio: number;
     trustScore: number;
     weightedRating: number | null;
+    appAverageRating: number | null;
     reviewCount: number;
     positiveRatio: number;
     lastAnalyzedAt: string | null;
@@ -53,6 +55,7 @@ interface StoreDetail {
       address: string | null;
       rank: number;
       rating: number;
+      appAverageRating?: number | null;
       reviewCount: number;
       isSelf: boolean;
     }>;
@@ -536,8 +539,11 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                       {store.address ?? "주소 정보 없음"}
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
+                      <span style={{ color: "#28502E" }}>
+                        ⭐ {store.summary.weightedRating?.toFixed(1) ?? "-"}
+                      </span>
                       <span style={{ color: "#47682C", fontWeight: 700 }}>
-                        ★ 앱 점수 {store.summary.weightedRating?.toFixed(1) ?? "-"}
+                        ★ 앱 점수 {store.summary.appAverageRating?.toFixed(1) ?? "-"}
                       </span>
                       <span style={{ color: "#28502E" }}>
                         {/* Use max of summary (cached) and direct externalReviewCount to handle stale cache */}
@@ -638,9 +644,14 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
                     {/* 평점 */}
                     {storeDetail.insight?.rating !== null && storeDetail.insight?.rating !== undefined && (
-                      <div style={{ fontSize: 44, fontWeight: 800, color: "#28502E", marginBottom: 12 }}>
-                        ⭐ {storeDetail.insight.rating.toFixed(1)}
-                      </div>
+                      <>
+                        <div style={{ fontSize: 44, fontWeight: 800, color: "#28502E", marginBottom: 4 }}>
+                          ⭐ {storeDetail.insight.rating.toFixed(1)}
+                        </div>
+                        <div style={{ fontSize: 20, fontWeight: 800, color: "#47682C", marginBottom: 12 }}>
+                          ★ 앱 점수 {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"}
+                        </div>
+                      </>
                     )}
 
                     {/* 평점신뢰도 */}
@@ -930,10 +941,6 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                     {storeDetail.insight.comparedStores.map((comparedStore) => {
                       const isHovered = hoveredCompareId === comparedStore.id;
                       const trustScore = computeRatingTrustScore(comparedStore.rating, comparedStore.reviewCount);
-                      const appScoreText =
-                        typeof comparedStore.rating === "number" && Number.isFinite(comparedStore.rating)
-                          ? comparedStore.rating.toFixed(1)
-                          : "-";
                       return (
                         <div
                           key={comparedStore.id}
@@ -963,7 +970,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                             </span>
                           )}
                           <span style={{ marginLeft: 8, color: "#8C7051" }}>
-                            · <span style={{ color: "#47682C", fontWeight: 700 }}>★ 앱 점수 {appScoreText}</span> · 리뷰 {comparedStore.reviewCount} · {trustScore.emoji} {trustScore.totalScore}점
+                            · ⭐{comparedStore.rating.toFixed(1)} · <span style={{ color: "#47682C", fontWeight: 700 }}>★ 앱 점수 {typeof comparedStore.appAverageRating === "number" ? comparedStore.appAverageRating.toFixed(1) : "-"}</span> · 리뷰 {comparedStore.reviewCount} · {trustScore.emoji} {trustScore.totalScore}점
                           </span>
                         </div>
                       );
@@ -1042,10 +1049,11 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                             color: "#28502E",
                           }}
                         >
-                          <strong style={{ color: "#47682C" }}>
-                            ★ 앱 점수 {Number.isFinite(review.rating) ? review.rating.toFixed(1) : "-"}
-                          </strong>
+                          <strong>{review.rating.toFixed(1)}점</strong>
                           <span>{review.source === "external" ? "외부" : "앱"}</span>
+                          <span style={{ color: "#47682C", fontWeight: 700 }}>
+                            ★ 앱 점수 {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"}
+                          </span>
                           {review.authorStats && (
                             <span>
                               작성자 리뷰 {review.authorStats.reviewCount}개 · 평균 {review.authorStats.averageRating.toFixed(1)}점

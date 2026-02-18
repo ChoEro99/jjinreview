@@ -53,6 +53,7 @@ export type ReviewRecord = {
 
 export type StoreSummary = {
   weightedRating: number | null;
+  appAverageRating: number | null;
   adSuspectRatio: number;
   trustScore: number;
   positiveRatio: number;
@@ -378,6 +379,7 @@ function normalizeAnalysisRow(row: Record<string, unknown>): ReviewAnalysisRecor
 function metricRowToSummary(metric: StoreMetricRow): StoreSummary {
   return {
     weightedRating: metric.weighted_rating,
+    appAverageRating: null,
     adSuspectRatio: metric.ad_suspect_ratio,
     trustScore: metric.trust_score,
     positiveRatio: metric.positive_ratio,
@@ -395,6 +397,7 @@ function summarizeReviews(
 ): StoreSummary {
   const inappReviewCount = reviews.filter((review) => review.source === "inapp").length;
   const externalReviewCount = reviews.filter((review) => review.source === "external").length;
+  const inappRatings = reviews.filter((review) => review.source === "inapp").map((review) => review.rating);
 
   let ratingWeightSum = 0;
   let weightedRatingSum = 0;
@@ -450,6 +453,10 @@ function summarizeReviews(
   const adSuspectRatio = reviewCount > 0 ? round4(adAnySum / reviewCount) : 0;
   const trustScore = reviewCount > 0 ? round4(trustSum / reviewCount) : 0.5;
   const positiveRatio = ratingWeightSum > 0 ? round4(positiveWeightSum / ratingWeightSum) : 0;
+  const appAverageRating =
+    inappRatings.length > 0
+      ? round2(inappRatings.reduce((sum, rating) => sum + rating, 0) / inappRatings.length)
+      : null;
 
   // Use fallback external review count when actual external reviews are not available
   const effectiveExternalReviewCount = Math.max(
@@ -459,6 +466,7 @@ function summarizeReviews(
 
   return {
     weightedRating,
+    appAverageRating,
     adSuspectRatio,
     trustScore,
     positiveRatio,
@@ -862,6 +870,7 @@ export async function getStoresWithSummary() {
   );
 
   const metricMap = await loadStoreMetricMap(normalizedStores.map((store) => store.id));
+  const appAverageMap = await loadAppAverageRatingByStoreIds(normalizedStores.map((store) => store.id));
 
   const missingStoreIds = normalizedStores
     .filter((store) => !metricMap.has(store.id))
@@ -895,10 +904,14 @@ export async function getStoresWithSummary() {
 
   return normalizedStores.map((store) => {
     const metric = metricMap.get(store.id);
-    const summary = metric
+    const baseSummary = metric
       ? metricRowToSummary(metric)
       : computedSummaryMap.get(store.id) ??
         summarizeReviews([], store.externalRating, store.externalReviewCount ?? null);
+    const summary: StoreSummary = {
+      ...baseSummary,
+      appAverageRating: appAverageMap.get(store.id) ?? baseSummary.appAverageRating ?? null,
+    };
 
     return {
       ...store,
@@ -911,6 +924,7 @@ async function enrichStoresWithSummary(stores: StoreBase[]) {
   if (!stores.length) return [] as StoreWithSummary[];
 
   const metricMap = await loadStoreMetricMap(stores.map((store) => store.id));
+  const appAverageMap = await loadAppAverageRatingByStoreIds(stores.map((store) => store.id));
   const missingStoreIds = stores
     .filter((store) => !metricMap.has(store.id))
     .map((store) => store.id);
@@ -941,10 +955,16 @@ async function enrichStoresWithSummary(stores: StoreBase[]) {
 
   return stores.map((store) => ({
     ...store,
-    summary:
-      metricMap.get(store.id)
+    summary: {
+      ...(metricMap.get(store.id)
         ? metricRowToSummary(metricMap.get(store.id) as StoreMetricRow)
-        : computedSummaryMap.get(store.id) ?? summarizeReviews([], store.externalRating, store.externalReviewCount ?? null),
+        : computedSummaryMap.get(store.id) ?? summarizeReviews([], store.externalRating, store.externalReviewCount ?? null)),
+      appAverageRating:
+        appAverageMap.get(store.id) ??
+        (metricMap.get(store.id)
+          ? metricRowToSummary(metricMap.get(store.id) as StoreMetricRow).appAverageRating
+          : computedSummaryMap.get(store.id)?.appAverageRating ?? null),
+    },
   })) satisfies StoreWithSummary[];
 }
 
@@ -1045,6 +1065,7 @@ type StoreDetailSnapshot = {
       address: string | null;
       rank: number;
       rating: number;
+      appAverageRating?: number | null;
       reviewCount: number;
       isSelf: boolean;
     }>;
@@ -1155,11 +1176,20 @@ export async function getStoreDetail(id: number) {
     };
   });
   reviewsWithAuthorStats.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  const freshSummary = summarizeReviews(
+    reviewsWithAuthorStats,
+    cachedSnapshot?.store.externalRating ?? null,
+    cachedSnapshot?.store.externalReviewCount ?? 0
+  );
   
   // If we have a valid cached snapshot, use it and return early
   if (cachedSnapshot) {
     return {
       ...cachedSnapshot,
+      summary: {
+        ...cachedSnapshot.summary,
+        appAverageRating: freshSummary.appAverageRating,
+      },
       reviews: reviewsWithAuthorStats, // Always return fresh reviews
     };
   }
@@ -1259,6 +1289,18 @@ export async function getStoreDetail(id: number) {
   } catch (error) {
     console.error("Failed to compute rank insight, using null:", error);
   }
+
+  const comparedStoreIds =
+    rankInsight?.comparedStores
+      .map((row) => (typeof row.id === "number" ? row.id : null))
+      .filter((id): id is number => id !== null) ?? [];
+  const comparedStoreAppAvgMap = await loadAppAverageRatingByStoreIds(comparedStoreIds);
+  const comparedStoresWithAppAverage =
+    rankInsight?.comparedStores.map((row) => ({
+      ...row,
+      appAverageRating:
+        typeof row.id === "number" ? (comparedStoreAppAvgMap.get(row.id) ?? null) : null,
+    })) ?? [];
   
   const reliabilityLabel = reliabilityLabelBySnapshot(
     normalizedStore.externalRating,
@@ -1278,7 +1320,7 @@ export async function getStoreDetail(id: number) {
       topPercent1km: rankInsight?.topPercent ?? null,
       rankWithin1km: rankInsight?.rank ?? null,
       rankTotalWithin1km: rankInsight?.total ?? null,
-      comparedStores: rankInsight?.comparedStores ?? [],
+      comparedStores: comparedStoresWithAppAverage,
       reviewCount: normalizedStore.externalReviewCount ?? 0,
       rating: normalizedStore.externalRating,
       radiusKm: 1,
@@ -1296,6 +1338,35 @@ export async function getStoreDetail(id: number) {
     ...snapshot,
     reviews: reviewsWithAuthorStats, // Include fresh reviews in response
   };
+}
+
+async function loadAppAverageRatingByStoreIds(storeIds: number[]) {
+  if (!storeIds.length) return new Map<number, number>();
+  const sb = supabaseServer();
+  const { data, error } = await sb
+    .from("user_reviews")
+    .select("store_id, rating")
+    .in("store_id", storeIds);
+
+  if (error) {
+    if (isMissingTableError(error)) return new Map<number, number>();
+    throw new Error(error.message);
+  }
+
+  const aggregate = new Map<number, { sum: number; count: number }>();
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const storeId = toNumber(row.store_id);
+    const rating = toNumber(row.rating);
+    if (storeId === null || rating === null) continue;
+    const prev = aggregate.get(storeId) ?? { sum: 0, count: 0 };
+    prev.sum += rating;
+    prev.count += 1;
+    aggregate.set(storeId, prev);
+  }
+
+  return new Map(
+    Array.from(aggregate.entries()).map(([storeId, v]) => [storeId, round2(v.sum / Math.max(1, v.count))])
+  );
 }
 
 export async function createStore(input: CreateStoreInput) {

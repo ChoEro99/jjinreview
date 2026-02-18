@@ -16,6 +16,7 @@ interface StoreDetail {
     adSuspectRatio: number;
     trustScore: number;
     weightedRating: number | null;
+    appAverageRating: number | null;
     reviewCount: number;
     positiveRatio: number;
     lastAnalyzedAt: string | null;
@@ -152,6 +153,9 @@ export default async function StorePage({ params }: Props) {
         <div style={{ fontWeight: 800, fontSize: 16, color: "#28502E" }}>점수 요약</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 16, color: "#2d2d2d" }}>
           <span>신뢰가중 평점: {detail.summary.weightedRating?.toFixed(1) ?? "-"}</span>
+          <span style={{ color: "#47682C", fontWeight: 700 }}>
+            ★ 앱 점수: {detail.summary.appAverageRating?.toFixed(1) ?? "-"}
+          </span>
           <span>리뷰 수: {detail.summary.reviewCount}</span>
           <span>광고 의심 비율: {adPct}%</span>
           <span>리뷰 신뢰 점수: {trustPoint}점</span>
@@ -196,10 +200,11 @@ export default async function StorePage({ params }: Props) {
                 }}
               >
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 14, color: "#2d2d2d" }}>
-                  <strong style={{ color: "#47682C" }}>
-                    ★ 앱 점수 {Number.isFinite(review.rating) ? review.rating.toFixed(1) : "-"}
-                  </strong>
+                  <strong>{review.rating.toFixed(1)}점</strong>
                   <span>{review.source === "external" ? "외부" : "앱"}</span>
+                  <span style={{ color: "#47682C", fontWeight: 700 }}>
+                    ★ 앱 점수 {detail.summary.appAverageRating?.toFixed(1) ?? "-"}
+                  </span>
                   {review.authorStats && (
                     <span>
                       작성자 리뷰 {review.authorStats.reviewCount}개 · 평균 {review.authorStats.averageRating.toFixed(1)}점
