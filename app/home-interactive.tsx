@@ -143,6 +143,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     moved: false,
   });
   const suppressCardClickRef = useRef(false);
+  const hasAutoOpenedStoreFromQueryRef = useRef(false);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -284,7 +285,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     return () => window.removeEventListener("resize", updateListViewport);
   }, []);
 
-  const handleStoreClick = async (storeId: number) => {
+  const handleStoreClick = useCallback(async (storeId: number) => {
     // 이전 진행 중인 fetch 취소
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -366,7 +367,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         setIsLoadingDetail(false);
       }
     }
-  };
+  }, []);
 
   const handleComparedStoreClick = async (storeId: number | string, storeName: string, storeAddress: string | null) => {
     // If it's a number, it's already a registered store ID
@@ -438,6 +439,21 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       setIsLoadingDetail(false);
     }
   };
+
+  useEffect(() => {
+    if (hasAutoOpenedStoreFromQueryRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const rawStoreId = params.get("storeId");
+    if (!rawStoreId) return;
+    const storeId = Number(rawStoreId);
+    if (!Number.isFinite(storeId) || storeId <= 0) return;
+    hasAutoOpenedStoreFromQueryRef.current = true;
+    void handleStoreClick(storeId);
+    params.delete("storeId");
+    const nextQuery = params.toString();
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, [handleStoreClick]);
 
   const showDetailPane = selectedStoreId !== null;
   const LIST_CARD_HEIGHT = 126;

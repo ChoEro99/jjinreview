@@ -139,7 +139,7 @@ export default function AuthButton() {
 
   const goToStoreDetail = (storeId: number) => {
     setMyReviewsOpen(false);
-    router.push(`/stores/${storeId}`);
+    router.push(`/?storeId=${storeId}`);
   };
 
   if (session?.user) {

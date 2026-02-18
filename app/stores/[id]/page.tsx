@@ -80,9 +80,23 @@ export default async function StorePage({ params }: Props) {
   const detail = await getStoreDetail(storeId).catch(() => null) as StoreDetail | null;
   if (!detail) notFound();
 
-  const adPct = Math.round(detail.summary.adSuspectRatio * 100);
-  const trustPoint = Math.round(detail.summary.trustScore * 100);
-  const hasAnyReview = detail.summary.reviewCount > 0;
+  const toNumber = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() !== "") {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return null;
+  };
+  const formatPoint = (value: unknown) => {
+    const n = toNumber(value);
+    return n === null ? "-" : n.toFixed(1);
+  };
+
+  const adPct = Math.round((toNumber(detail.summary.adSuspectRatio) ?? 0) * 100);
+  const trustPoint = Math.round((toNumber(detail.summary.trustScore) ?? 0) * 100);
+  const hasAnyReview = (toNumber(detail.summary.reviewCount) ?? 0) > 0;
+  const reviews = Array.isArray(detail.reviews) ? detail.reviews : [];
   const photoUrls = (detail.photos ?? [])
     .map((photo) => (typeof photo === "string" ? photo : photo?.url))
     .filter((url): url is string => typeof url === "string" && url.length > 0);
@@ -163,14 +177,14 @@ export default async function StorePage({ params }: Props) {
       >
         <div style={{ fontWeight: 800, fontSize: 16, color: "#28502E" }}>점수 요약</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 16, color: "#2d2d2d" }}>
-          <span>신뢰가중 평점: {detail.summary.weightedRating?.toFixed(1) ?? "-"}</span>
+          <span>신뢰가중 평점: {formatPoint(detail.summary.weightedRating)}</span>
           <span style={{ color: "#47682C", fontWeight: 700 }}>
-            ★ 앱 점수: {detail.summary.appAverageRating?.toFixed(1) ?? "-"}
+            ★ 앱 점수: {formatPoint(detail.summary.appAverageRating)}
           </span>
-          <span>리뷰 수: {detail.summary.reviewCount}</span>
+          <span>리뷰 수: {toNumber(detail.summary.reviewCount) ?? 0}</span>
           <span>광고 의심 비율: {adPct}%</span>
           <span>리뷰 신뢰 점수: {hasAnyReview ? `${trustPoint}점` : "-"}</span>
-          <span>긍정 비율: {Math.round(detail.summary.positiveRatio * 100)}%</span>
+          <span>긍정 비율: {Math.round((toNumber(detail.summary.positiveRatio) ?? 0) * 100)}%</span>
         </div>
         <div style={{ marginTop: 6, fontSize: 13, color: "#8C7051" }}>
           AI 분석 기반 자동추정이며 법적 확정 판단이 아닙니다.
@@ -187,13 +201,13 @@ export default async function StorePage({ params }: Props) {
       </section>
 
       <section style={{ marginTop: 28 }}>
-        <h2 style={{ fontSize: 22, fontWeight: 800, color: "#28502E" }}>전체 리뷰 ({detail.reviews.length})</h2>
+        <h2 style={{ fontSize: 22, fontWeight: 800, color: "#28502E" }}>전체 리뷰 ({reviews.length})</h2>
         <div style={{ marginTop: 12 }}>
           <AdPlaceholder label="리뷰 리스트 상단" />
         </div>
 
         <ul style={{ marginTop: 14, padding: 0, listStyle: "none", display: "grid", gap: 12 }}>
-          {detail.reviews.map((review) => {
+          {reviews.map((review) => {
             const adAny = review.latestAnalysis
               ? 1 -
                 (1 - review.latestAnalysis.adRisk) *
@@ -211,14 +225,14 @@ export default async function StorePage({ params }: Props) {
                 }}
               >
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 14, color: "#2d2d2d" }}>
-                  <strong>{review.rating.toFixed(1)}점</strong>
+                  <strong>{formatPoint(review.rating)}점</strong>
                   <span>{review.source === "external" ? "외부" : "앱"}</span>
                   <span style={{ color: "#47682C", fontWeight: 700 }}>
-                    ★ 앱 점수 {detail.summary.appAverageRating?.toFixed(1) ?? "-"}
+                    ★ 앱 점수 {formatPoint(detail.summary.appAverageRating)}
                   </span>
                   {review.authorStats && (
                     <span>
-                      작성자 리뷰 {review.authorStats.reviewCount}개 · 평균 {review.authorStats.averageRating.toFixed(1)}점
+                      작성자 리뷰 {toNumber(review.authorStats.reviewCount) ?? 0}개 · 평균 {formatPoint(review.authorStats.averageRating)}점
                     </span>
                   )}
                 </div>
