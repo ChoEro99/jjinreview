@@ -110,6 +110,68 @@ interface StoreDetail {
   photosFull?: string[];
 }
 
+type UserLocation = { latitude: number; longitude: number };
+
+type NearbyRecommendation = {
+  store: StoreWithSummary;
+  distanceKm: number;
+  ratingTrust: ReturnType<typeof computeRatingTrustScore>;
+  score: number;
+};
+
+type NearbyRecommendationApiRow = {
+  store: StoreWithSummary;
+  distanceKm: number;
+  ratingTrustScore?: ReturnType<typeof computeRatingTrustScore>;
+  compositeScore?: number;
+};
+
+function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function buildNearbyRecommendations(stores: StoreWithSummary[], location: UserLocation) {
+  const candidates: NearbyRecommendation[] = stores
+    .map((store) => {
+      if (
+        typeof store.latitude !== "number" ||
+        !Number.isFinite(store.latitude) ||
+        typeof store.longitude !== "number" ||
+        !Number.isFinite(store.longitude)
+      ) {
+        return null;
+      }
+      const dist = distanceKm(location.latitude, location.longitude, store.latitude, store.longitude);
+      const externalCount = Math.max(store.summary.externalReviewCount ?? 0, store.externalReviewCount ?? 0);
+      const ratingTrust = computeRatingTrustScore(store.externalRating ?? null, externalCount);
+      const externalRating = typeof store.externalRating === "number" ? store.externalRating : 0;
+      const appRating = typeof store.summary.appAverageRating === "number" ? store.summary.appAverageRating : 0;
+      const score = externalRating * 18 + ratingTrust.totalScore * 0.8 + appRating * 6;
+      return { store, distanceKm: dist, ratingTrust, score };
+    })
+    .filter((v): v is NearbyRecommendation => Boolean(v));
+
+  const near1km = candidates.filter((item) => item.distanceKm <= 1);
+  const near2km = candidates.filter((item) => item.distanceKm <= 2);
+  const base = near1km.length >= 3 ? near1km : near2km;
+
+  return base
+    .sort((a, b) => {
+      if (Math.abs(a.distanceKm - b.distanceKm) > 0.6) return a.distanceKm - b.distanceKm;
+      if (Math.abs(b.score - a.score) > 0.5) return b.score - a.score;
+      return a.distanceKm - b.distanceKm;
+    })
+    .slice(0, 5);
+}
+
 const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -129,6 +191,9 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [listViewportHeight, setListViewportHeight] = useState(0);
   const [isReviewFormOpen, setIsReviewFormOpen] = useState(false);
   const [showAllComparedStores, setShowAllComparedStores] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [nearbyRecommendations, setNearbyRecommendations] = useState<NearbyRecommendation[]>([]);
   
   // Cache for store details to avoid re-fetching
   const storeDetailCache = useRef<Map<number, StoreDetail>>(new Map());
@@ -519,6 +584,90 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     };
   }, [storeCards, listScrollTop, listViewportHeight]);
 
+  const handleLocateAndRecommend = useCallback(() => {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setLocationError("이 브라우저에서는 위치 기능을 지원하지 않습니다.");
+      return;
+    }
+    setIsLocating(true);
+    setLocationError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const coords = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        };
+        void (async () => {
+          try {
+            const response = await fetch("/api/stores/nearby", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                limit: 5,
+              }),
+            });
+            if (!response.ok) throw new Error("nearby api failed");
+            const data = (await response.json()) as {
+              ok?: boolean;
+              recommendations?: NearbyRecommendationApiRow[];
+            };
+            if (!data.ok || !Array.isArray(data.recommendations)) {
+              throw new Error("invalid nearby response");
+            }
+
+            const normalized: NearbyRecommendation[] = data.recommendations.map((row) => {
+              const externalCount = Math.max(
+                row.store.summary.externalReviewCount ?? 0,
+                row.store.externalReviewCount ?? 0
+              );
+              return {
+                store: row.store,
+                distanceKm: row.distanceKm,
+                ratingTrust:
+                  row.ratingTrustScore ??
+                  computeRatingTrustScore(row.store.externalRating ?? null, externalCount),
+                score:
+                  typeof row.compositeScore === "number" && Number.isFinite(row.compositeScore)
+                    ? row.compositeScore
+                    : 0,
+              };
+            });
+
+            setNearbyRecommendations(normalized);
+            setStores((prev) => {
+              const byId = new Map(prev.map((item) => [item.id, item] as const));
+              for (const row of normalized) byId.set(row.store.id, row.store);
+              const merged = Array.from(byId.values());
+              const recommendedIds = new Set(normalized.map((item) => item.store.id));
+              const pinned = merged.filter((s) => recommendedIds.has(s.id));
+              const rest = merged.filter((s) => !recommendedIds.has(s.id));
+              return [...pinned, ...rest];
+            });
+          } catch {
+            setStores((prev) => {
+              const fallback = buildNearbyRecommendations(prev, coords);
+              setNearbyRecommendations(fallback);
+              if (!fallback.length) return prev;
+              const recommendedIds = new Set(fallback.map((item) => item.store.id));
+              const pinned = prev.filter((s) => recommendedIds.has(s.id));
+              const rest = prev.filter((s) => !recommendedIds.has(s.id));
+              return [...pinned, ...rest];
+            });
+          } finally {
+            setIsLocating(false);
+          }
+        })();
+      },
+      () => {
+        setIsLocating(false);
+        setLocationError("위치를 가져오지 못했습니다. 권한을 허용해주세요.");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60_000 }
+    );
+  }, []);
+
   // Calculate combined ad risk probability from individual risk scores
   const calculateCombinedAdRisk = (adRisk: number, undisclosedAdRisk: number): number => {
     // Formula: P(A or B) = 1 - P(not A) * P(not B)
@@ -607,6 +756,71 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 {isSearching ? "검색 중..." : "검색"}
               </button>
             </form>
+
+            <div
+              style={{
+                border: "1px solid rgba(140, 112, 81, 0.35)",
+                borderRadius: 10,
+                padding: isMobile ? 10 : 12,
+                marginBottom: 12,
+                background: "rgba(71, 104, 44, 0.08)",
+              }}
+            >
+              <button
+                type="button"
+                onClick={handleLocateAndRecommend}
+                disabled={isLocating}
+                style={{
+                  width: "100%",
+                  padding: isMobile ? "10px 12px" : "11px 13px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(40, 80, 46, 0.45)",
+                  background: isLocating ? "rgba(140, 112, 81, 0.24)" : "#47682C",
+                  color: "#ffffff",
+                  fontSize: isMobile ? 13 : 14,
+                  fontWeight: 700,
+                  cursor: isLocating ? "not-allowed" : "pointer",
+                }}
+              >
+                {isLocating ? "위치 확인 중..." : "내 주변 추천 보기"}
+              </button>
+
+              {locationError && (
+                <div style={{ marginTop: 8, fontSize: 12, color: "#7A2A19" }}>{locationError}</div>
+              )}
+
+              {nearbyRecommendations.length > 0 && (
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#28502E" }}>
+                    가까운 가게 중 평점/믿음지수 추천
+                  </div>
+                  {nearbyRecommendations.map((item, idx) => (
+                    <button
+                      key={`nearby-${item.store.id}`}
+                      type="button"
+                      onClick={() => handleStoreClick(item.store.id)}
+                      style={{
+                        border: "1px solid rgba(140, 112, 81, 0.35)",
+                        borderRadius: 8,
+                        padding: "8px 10px",
+                        textAlign: "left",
+                        background: "rgba(255,255,255,0.45)",
+                        color: "#28502E",
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>
+                        {idx + 1}. {item.store.name}
+                      </div>
+                      <div style={{ marginTop: 2, color: "#8C7051" }}>
+                        {item.distanceKm.toFixed(2)}km · ⭐ {item.store.externalRating?.toFixed(1) ?? "-"} · 믿음 {item.ratingTrust.totalScore}점
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div
               ref={storeListRef}

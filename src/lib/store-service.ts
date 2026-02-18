@@ -1256,6 +1256,13 @@ type StoreDetailSnapshot = {
   photosFull: string[];
 };
 
+type NearbyRecommendationRow = {
+  store: StoreWithSummary;
+  distanceKm: number;
+  ratingTrustScore: ReturnType<typeof computeRatingTrustScore>;
+  compositeScore: number;
+};
+
 async function deleteExpiredSnapshot(
   sb: ReturnType<typeof supabaseServer>,
   storeId: number,
@@ -3100,6 +3107,191 @@ export async function searchAndAutoRegisterStoreByKeyword(
     hasMore,
     nextOffset: hasMore ? safeOffset + safeLimit : null,
   };
+}
+
+async function loadNearbyStoresFromDb(
+  location: { latitude: number; longitude: number },
+  radiusKm: number
+) {
+  const sb = supabaseServer();
+  const lat = location.latitude;
+  const lon = location.longitude;
+  const latDelta = radiusKm / 111;
+  const lonDelta = radiusKm / (111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+
+  const { data, error } = await sb
+    .from("stores")
+    .select("id, name, address, latitude, longitude, external_rating, external_review_count")
+    .gte("latitude", lat - latDelta)
+    .lte("latitude", lat + latDelta)
+    .gte("longitude", lon - lonDelta)
+    .lte("longitude", lon + lonDelta)
+    .limit(300);
+
+  if (error || !data) {
+    if (isMissingColumnError(error)) return [] as StoreBase[];
+    throw new Error(error?.message ?? "주변 가게 조회에 실패했습니다.");
+  }
+
+  const dedup = new Map<string, StoreBase>();
+  for (const row of data as Array<Record<string, unknown>>) {
+    const normalized = normalizeStoreRow(row);
+    if (
+      typeof normalized.latitude !== "number" ||
+      !Number.isFinite(normalized.latitude) ||
+      typeof normalized.longitude !== "number" ||
+      !Number.isFinite(normalized.longitude)
+    ) {
+      continue;
+    }
+    const dist = distanceKm(lat, lon, normalized.latitude, normalized.longitude);
+    if (dist > radiusKm) continue;
+    const key = `${normalizeNameKey(normalized.name)}|${normalizeAddressKey(normalized.address)}`;
+    const prev = dedup.get(key);
+    if (!prev || (normalized.externalReviewCount ?? 0) > (prev.externalReviewCount ?? 0)) {
+      dedup.set(key, normalized);
+    }
+  }
+
+  return Array.from(dedup.values());
+}
+
+async function importNearbyStoresByLocation(location: { latitude: number; longitude: number }) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return { imported: 0 };
+
+  const types: string[] = ["restaurant", "cafe"];
+  let imported = 0;
+
+  for (const includedType of types) {
+    const nearbyRes = await fetchGoogleJsonWithRetry<{
+      places?: Array<{
+        displayName?: { text?: string };
+        formattedAddress?: string;
+        rating?: number;
+        userRatingCount?: number;
+        location?: { latitude?: number; longitude?: number };
+      }>;
+    }>("https://places.googleapis.com/v1/places:searchNearby", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask":
+          "places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.location",
+      },
+      body: JSON.stringify({
+        includedTypes: [includedType],
+        maxResultCount: 20,
+        languageCode: "ko",
+        regionCode: "KR",
+        locationRestriction: {
+          circle: {
+            center: { latitude: location.latitude, longitude: location.longitude },
+            radius: 1500,
+          },
+        },
+      }),
+    });
+
+    for (const place of nearbyRes.places ?? []) {
+      const name = place.displayName?.text?.trim() ?? "";
+      if (!name) continue;
+      const address = place.formattedAddress ?? null;
+      if (address && !isKoreanAddress(address)) continue;
+      const created = await createStore({
+        name,
+        address,
+        latitude:
+          typeof place.location?.latitude === "number" && Number.isFinite(place.location.latitude)
+            ? place.location.latitude
+            : null,
+        longitude:
+          typeof place.location?.longitude === "number" && Number.isFinite(place.location.longitude)
+            ? place.location.longitude
+            : null,
+        externalRating:
+          typeof place.rating === "number" && Number.isFinite(place.rating) ? place.rating : null,
+        externalReviewCount:
+          typeof place.userRatingCount === "number" && Number.isFinite(place.userRatingCount)
+            ? Math.max(0, Math.round(place.userRatingCount))
+            : null,
+      });
+      if (created.created) imported += 1;
+    }
+  }
+
+  return { imported };
+}
+
+export async function getNearbyRecommendedStoresByLocation(
+  location: { latitude: number; longitude: number },
+  options?: { limit?: number; minDbCount?: number; radiusKm?: number }
+) {
+  const limit =
+    typeof options?.limit === "number" && Number.isFinite(options.limit)
+      ? Math.max(1, Math.min(10, Math.floor(options.limit)))
+      : 5;
+  const minDbCount =
+    typeof options?.minDbCount === "number" && Number.isFinite(options.minDbCount)
+      ? Math.max(1, Math.min(20, Math.floor(options.minDbCount)))
+      : 5;
+  const radiusKm =
+    typeof options?.radiusKm === "number" && Number.isFinite(options.radiusKm)
+      ? Math.max(0.5, Math.min(5, options.radiusKm))
+      : 1;
+
+  let nearbyStores = await loadNearbyStoresFromDb(location, radiusKm);
+  if (nearbyStores.length < minDbCount) {
+    await importNearbyStoresByLocation(location).catch((error) => {
+      console.error("Failed to import nearby stores by location:", error);
+    });
+    nearbyStores = await loadNearbyStoresFromDb(location, Math.max(radiusKm, 1.5));
+  }
+
+  const enriched = await enrichStoresWithSummary(nearbyStores);
+  const ranked: NearbyRecommendationRow[] = enriched
+    .map((store) => {
+      if (
+        typeof store.latitude !== "number" ||
+        !Number.isFinite(store.latitude) ||
+        typeof store.longitude !== "number" ||
+        !Number.isFinite(store.longitude)
+      ) {
+        return null;
+      }
+      const distance = distanceKm(location.latitude, location.longitude, store.latitude, store.longitude);
+      const externalCount = Math.max(store.summary.externalReviewCount ?? 0, store.externalReviewCount ?? 0);
+      const trust = computeRatingTrustScore(store.externalRating ?? null, externalCount);
+      const externalRating = typeof store.externalRating === "number" ? store.externalRating : 0;
+      const appRating = typeof store.summary.appAverageRating === "number" ? store.summary.appAverageRating : 0;
+      const compositeScore = externalRating * 18 + trust.totalScore * 0.8 + appRating * 6;
+      return {
+        store,
+        distanceKm: distance,
+        ratingTrustScore: trust,
+        compositeScore,
+      };
+    })
+    .filter((row): row is NearbyRecommendationRow => Boolean(row))
+    .sort((a, b) => {
+      if (Math.abs(a.distanceKm - b.distanceKm) > 0.6) return a.distanceKm - b.distanceKm;
+      if (Math.abs(b.compositeScore - a.compositeScore) > 0.5) return b.compositeScore - a.compositeScore;
+      return a.distanceKm - b.distanceKm;
+    })
+    .slice(0, limit);
+
+  await Promise.allSettled(
+    ranked.map((row) =>
+      getGoogleReviewsWithAiForStore(row.store.id, {
+        maxReviews: 5,
+        forceRefresh: false,
+        maxAgeHours: 24 * 7,
+      })
+    )
+  );
+
+  return ranked;
 }
 
 export async function backfillStoreGeoFromGoogle(options?: {
