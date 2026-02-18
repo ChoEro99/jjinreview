@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 
 const MAX_DISPLAY_NAME_LENGTH = 10;
+const MY_REVIEWS_CACHE_TTL_MS = 45_000;
 type OptionValue = "good" | "normal" | "bad" | "expensive" | "cheap" | "enough" | "narrow" | "short" | "long" | null;
 
 type MyReview = {
@@ -40,6 +41,10 @@ export default function AuthButton() {
   const [isLoadingMyReviews, setIsLoadingMyReviews] = useState(false);
   const [myReviewsError, setMyReviewsError] = useState<string | null>(null);
   const [isDraggingMyReviews, setIsDraggingMyReviews] = useState(false);
+  const myReviewsCacheRef = useRef<{
+    fetchedAt: number;
+    reviews: MyReview[];
+  } | null>(null);
   const dragRef = useRef<{ isDragging: boolean; startX: number; moved: boolean }>({
     isDragging: false,
     startX: 0,
@@ -49,6 +54,14 @@ export default function AuthButton() {
 
   const openMyReviews = async () => {
     setMyReviewsOpen(true);
+    const cached = myReviewsCacheRef.current;
+    if (cached && Date.now() - cached.fetchedAt <= MY_REVIEWS_CACHE_TTL_MS) {
+      setMyReviews(cached.reviews);
+      setMyReviewsError(null);
+      setMyReviewsIndex(0);
+      setIsLoadingMyReviews(false);
+      return;
+    }
     setIsLoadingMyReviews(true);
     setMyReviewsError(null);
     try {
@@ -62,6 +75,7 @@ export default function AuthButton() {
       }
       const reviews = Array.isArray(result.reviews) ? result.reviews : [];
       setMyReviews(reviews);
+      myReviewsCacheRef.current = { fetchedAt: Date.now(), reviews };
       setMyReviewsIndex(0);
     } catch (error) {
       console.error("Failed to load my reviews:", error);
