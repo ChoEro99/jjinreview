@@ -5,7 +5,6 @@ import { useSession, signIn } from "next-auth/react";
 
 interface UserReviewFormProps {
   storeId: number;
-  storeName: string;
   onSuccess?: () => void;
 }
 

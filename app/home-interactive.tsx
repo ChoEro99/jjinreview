@@ -938,7 +938,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
                   리뷰 작성
                 </h3>
-                <UserReviewForm storeId={selectedStoreId!} storeName={storeDetail.store.name} />
+                <UserReviewForm storeId={selectedStoreId!} />
               </div>
 
               <div>

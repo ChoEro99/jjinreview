@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { createHash } from "crypto";
 import { supabaseServer } from "@/src/lib/supabaseServer";
+import { authOptions } from "../auth/[...nextauth]/route";
 
 function getIpHash(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for");
@@ -12,7 +13,7 @@ function getIpHash(req: Request): string {
 
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession();
+    const session = await getServerSession(authOptions);
     const userId = session?.user ? (session.user as { id?: string }).id : null;
 
     const body = await req.json();
