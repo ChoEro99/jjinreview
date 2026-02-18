@@ -8,9 +8,15 @@
     "start": "next start",
     "lint": "eslint",
     "import:localdata": "node scripts/import-localdata.mjs",
-    "dedupe:stores": "npx tsx scripts/run-dedupe-stores.mjs"
+    "dedupe:stores": "npx tsx scripts/run-dedupe-stores.mjs",
+    "cap:sync": "npx cap sync",
+    "cap:sync:android": "npx cap sync android",
+    "cap:open:android": "npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.1.0",
+    "@capacitor/cli": "^8.1.0",
+    "@capacitor/core": "^8.1.0",
     "@supabase/supabase-js": "^2.95.3",
     "@types/leaflet": "^1.9.21",
     "csv-parse": "^6.1.0",
