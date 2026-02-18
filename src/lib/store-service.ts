@@ -919,7 +919,7 @@ type StoreDetailSnapshot = {
   photosFull: string[];
 };
 
-async function deleteExpiredSnapshotAsync(
+async function deleteExpiredSnapshot(
   sb: ReturnType<typeof supabaseServer>,
   storeId: number,
   now: Date
@@ -959,7 +959,7 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
     
     if (now > expiresAt) {
       // Snapshot expired, return null to trigger recalculation
-      void deleteExpiredSnapshotAsync(sb, storeId, now);
+      void deleteExpiredSnapshot(sb, storeId, now);
       return null;
     }
     
