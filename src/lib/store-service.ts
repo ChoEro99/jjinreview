@@ -61,6 +61,7 @@ export type StoreSummary = {
   inappReviewCount: number;
   externalReviewCount: number;
   lastAnalyzedAt: string | null;
+  latestExternalReviewAt: string | null;
 };
 
 export type StoreWithSummary = StoreBase & {
@@ -461,6 +462,7 @@ function metricRowToSummary(metric: StoreMetricRow): StoreSummary {
     inappReviewCount: metric.inapp_review_count,
     externalReviewCount: metric.external_review_count,
     lastAnalyzedAt: metric.last_analyzed_at,
+    latestExternalReviewAt: null,
   };
 }
 
@@ -548,7 +550,49 @@ function summarizeReviews(
     inappReviewCount,
     externalReviewCount: effectiveExternalReviewCount,
     lastAnalyzedAt,
+    latestExternalReviewAt: null,
   };
+}
+
+function extractLatestExternalReviewAtFromCachePayload(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const reviews = (payload as { reviews?: unknown }).reviews;
+  if (!Array.isArray(reviews)) return null;
+
+  let latestTs = 0;
+  for (const row of reviews) {
+    if (!row || typeof row !== "object") continue;
+    const publishedAt = (row as { publishedAt?: unknown }).publishedAt;
+    if (typeof publishedAt !== "string") continue;
+    const ts = Date.parse(publishedAt);
+    if (!Number.isFinite(ts)) continue;
+    if (ts > latestTs) latestTs = ts;
+  }
+  if (latestTs <= 0) return null;
+  return new Date(latestTs).toISOString();
+}
+
+async function loadLatestExternalReviewAtByStoreIds(storeIds: number[]) {
+  if (!storeIds.length) return new Map<number, string | null>();
+
+  const sb = supabaseServer();
+  const { data, error } = await sb
+    .from("google_review_cache")
+    .select("store_id,payload")
+    .in("store_id", storeIds);
+
+  if (error) {
+    if (isMissingTableError(error)) return new Map<number, string | null>();
+    throw new Error(error.message);
+  }
+
+  const map = new Map<number, string | null>();
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const storeId = toNumber(row.store_id, 0) ?? 0;
+    if (storeId <= 0) continue;
+    map.set(storeId, extractLatestExternalReviewAtFromCachePayload(row.payload));
+  }
+  return map;
 }
 
 async function loadReviewsByStoreIds(storeIds: number[]) {
@@ -946,6 +990,9 @@ export async function getStoresWithSummary() {
 
   const metricMap = await loadStoreMetricMap(normalizedStores.map((store) => store.id));
   const appAverageMap = await loadAppAverageRatingByStoreIds(normalizedStores.map((store) => store.id));
+  const latestExternalReviewAtMap = await loadLatestExternalReviewAtByStoreIds(
+    normalizedStores.map((store) => store.id)
+  );
 
   const missingStoreIds = normalizedStores
     .filter((store) => !metricMap.has(store.id))
@@ -986,6 +1033,8 @@ export async function getStoresWithSummary() {
     const summary: StoreSummary = {
       ...baseSummary,
       appAverageRating: appAverageMap.get(store.id) ?? baseSummary.appAverageRating ?? null,
+      latestExternalReviewAt:
+        latestExternalReviewAtMap.get(store.id) ?? baseSummary.latestExternalReviewAt ?? null,
     };
 
     return {
@@ -1000,6 +1049,9 @@ async function enrichStoresWithSummary(stores: StoreBase[]) {
 
   const metricMap = await loadStoreMetricMap(stores.map((store) => store.id));
   const appAverageMap = await loadAppAverageRatingByStoreIds(stores.map((store) => store.id));
+  const latestExternalReviewAtMap = await loadLatestExternalReviewAtByStoreIds(
+    stores.map((store) => store.id)
+  );
   const storeById = new Map(stores.map((store) => [store.id, store] as const));
   const missingStoreIds = stores
     .filter((store) => !metricMap.has(store.id))
@@ -1040,6 +1092,8 @@ async function enrichStoresWithSummary(stores: StoreBase[]) {
       summary: {
         ...baseSummary,
         appAverageRating: appAverageMap.get(store.id) ?? baseSummary.appAverageRating ?? null,
+        latestExternalReviewAt:
+          latestExternalReviewAtMap.get(store.id) ?? baseSummary.latestExternalReviewAt ?? null,
       },
     };
   }) satisfies StoreWithSummary[];

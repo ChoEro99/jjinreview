@@ -25,6 +25,7 @@ interface StoreSummary {
   inappReviewCount: number;
   externalReviewCount: number;
   lastAnalyzedAt: string | null;
+  latestExternalReviewAt?: string | null;
 }
 
 interface StoreWithSummary extends StoreBase {
@@ -495,7 +496,11 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         const totalReviewCount = Math.max(store.summary.reviewCount, externalCount + inappCount);
         const ratingTrust = computeRatingTrustScore(
           store.externalRating ?? null,
-          externalCount
+          externalCount,
+          {
+            latestReviewAt: store.summary.latestExternalReviewAt ?? null,
+            lastSyncedAt: store.summary.lastAnalyzedAt ?? null,
+          }
         );
         return { store, totalReviewCount, externalCount, inappCount, ratingTrust };
       }),
