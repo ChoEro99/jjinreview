@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
 import { createStore, getStoresWithSummary } from "@/src/lib/store-service";
+import { unstable_cache } from "next/cache";
+
+const getCachedStoresWithSummary = unstable_cache(
+  async () => getStoresWithSummary(),
+  ["api-stores-summary-v1"],
+  { revalidate: 60 }
+);
 
 export async function GET() {
   try {
-    const stores = await getStoresWithSummary();
+    const stores = await getCachedStoresWithSummary();
     return NextResponse.json({ ok: true, stores });
   } catch (e: unknown) {
     return NextResponse.json(
