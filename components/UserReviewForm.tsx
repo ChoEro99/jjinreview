@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSession, signIn } from "next-auth/react";
 
 interface UserReviewFormProps {
@@ -11,7 +11,7 @@ interface UserReviewFormProps {
 
 type OptionValue = "good" | "normal" | "bad" | "expensive" | "cheap" | "enough" | "narrow" | "short" | "long" | null;
 
-export default function UserReviewForm({ storeId, storeName, onSuccess }: UserReviewFormProps) {
+export default function UserReviewForm({ storeId, onSuccess }: UserReviewFormProps) {
   const { data: session } = useSession();
   const [rating, setRating] = useState<number>(0);
   const [hoverRating, setHoverRating] = useState<number>(0);

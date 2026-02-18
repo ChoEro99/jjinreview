@@ -41,48 +41,33 @@ export async function POST(req: Request) {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    let query = supabase
-      .from("user_reviews")
-      .select("id")
-      .eq("store_id", storeId)
-      .gte("created_at", sevenDaysAgo.toISOString());
-
     if (userId) {
       // If logged in, check by user_id OR ip_hash
-      const { data: existingReviews } = await query;
-      const userOrIpReview = existingReviews?.find(
-        async (review) => {
-          const { data } = await supabase
-            .from("user_reviews")
-            .select("user_id, ip_hash")
-            .eq("id", review.id)
-            .single();
-          return data?.user_id === userId || data?.ip_hash === ipHash;
-        }
-      );
+      const { data: reviewDetails } = await supabase
+        .from("user_reviews")
+        .select("user_id, ip_hash")
+        .eq("store_id", storeId)
+        .gte("created_at", sevenDaysAgo.toISOString());
       
-      if (existingReviews && existingReviews.length > 0) {
-        // Need to check each review
-        const { data: reviewDetails } = await supabase
-          .from("user_reviews")
-          .select("user_id, ip_hash")
-          .eq("store_id", storeId)
-          .gte("created_at", sevenDaysAgo.toISOString());
-        
-        const hasRecentReview = reviewDetails?.some(
-          (r) => r.user_id === userId || r.ip_hash === ipHash
-        );
+      const hasRecentReview = reviewDetails?.some(
+        (r) => r.user_id === userId || r.ip_hash === ipHash
+      );
 
-        if (hasRecentReview) {
-          return NextResponse.json(
-            { ok: false, error: "7일 이내 이미 리뷰를 작성했습니다." },
-            { status: 429 }
-          );
-        }
+      if (hasRecentReview) {
+        return NextResponse.json(
+          { ok: false, error: "7일 이내 이미 리뷰를 작성했습니다." },
+          { status: 429 }
+        );
       }
     } else {
       // If not logged in, check by ip_hash only
-      const { data: existingReview } = await query.eq("ip_hash", ipHash).maybeSingle();
+      const { data: existingReview } = await supabase
+        .from("user_reviews")
+        .select("id")
+        .eq("store_id", storeId)
+        .eq("ip_hash", ipHash)
+        .gte("created_at", sevenDaysAgo.toISOString())
+        .maybeSingle();
 
       if (existingReview) {
         return NextResponse.json(
