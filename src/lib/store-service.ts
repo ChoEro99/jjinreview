@@ -124,8 +124,66 @@ type StoreCategory = "restaurant" | "cafe";
 
 function inferStoreCategoryByName(name: string): StoreCategory {
   const text = name.toLowerCase();
-  const cafeKeywords = ["카페", "coffee", "스타벅스", "투썸", "메가커피", "빽다방"];
-  return cafeKeywords.some((word) => text.includes(word)) ? "cafe" : "restaurant";
+  const cafeKeywords = [
+    "카페",
+    "커피",
+    "coffee",
+    "caffe",
+    "cafe",
+    "스타벅스",
+    "투썸",
+    "메가커피",
+    "빽다방",
+    "컴포즈",
+    "더벤티",
+    "이디야",
+    "할리스",
+    "폴바셋",
+    "엔제리너스",
+    "탐앤탐스",
+    "베이커리",
+    "디저트",
+    "브런치",
+    "티하우스",
+    "찻집",
+  ];
+  const restaurantKeywords = [
+    "식당",
+    "음식점",
+    "레스토랑",
+    "한식",
+    "중식",
+    "일식",
+    "양식",
+    "분식",
+    "국밥",
+    "찌개",
+    "탕",
+    "치킨",
+    "피자",
+    "버거",
+    "햄버거",
+    "라멘",
+    "우동",
+    "국수",
+    "초밥",
+    "스시",
+    "돈까스",
+    "고기",
+    "삼겹",
+    "족발",
+    "보쌈",
+    "횟집",
+    "포차",
+    "주점",
+  ];
+  const cafeScore = cafeKeywords.reduce((acc, word) => acc + (text.includes(word) ? 1 : 0), 0);
+  const restaurantScore = restaurantKeywords.reduce(
+    (acc, word) => acc + (text.includes(word) ? 1 : 0),
+    0
+  );
+  if (cafeScore > restaurantScore) return "cafe";
+  return "restaurant";
 }
 
 function inferQueryCategory(keyword: string): StoreCategory | null {
