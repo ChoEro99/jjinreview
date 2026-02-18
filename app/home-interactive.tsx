@@ -222,7 +222,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
             setStoreDetail(data);
           }
         })
-        .catch(() => {}); // abort는 무시
+        .catch((error) => {
+          // AbortError는 정상 취소이므로 무시
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          // 백그라운드 갱신 실패는 캐시가 이미 표시 중이므로 로깅만
+          console.error("Background refresh failed for store", storeId, ":", error);
+        });
       return;
     }
 
