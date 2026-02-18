@@ -196,7 +196,9 @@ export default async function StorePage({ params }: Props) {
                 }}
               >
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 14, color: "#2d2d2d" }}>
-                  <strong>{review.rating.toFixed(1)}점</strong>
+                  <strong style={{ color: "#47682C" }}>
+                    ★ 앱 점수 {Number.isFinite(review.rating) ? review.rating.toFixed(1) : "-"}
+                  </strong>
                   <span>{review.source === "external" ? "외부" : "앱"}</span>
                   {review.authorStats && (
                     <span>

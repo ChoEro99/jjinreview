@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 
 const MAX_DISPLAY_NAME_LENGTH = 10;
@@ -39,6 +39,13 @@ export default function AuthButton() {
   const [myReviewsIndex, setMyReviewsIndex] = useState(0);
   const [isLoadingMyReviews, setIsLoadingMyReviews] = useState(false);
   const [myReviewsError, setMyReviewsError] = useState<string | null>(null);
+  const [isDraggingMyReviews, setIsDraggingMyReviews] = useState(false);
+  const carouselRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ isDragging: boolean; startX: number; startScrollLeft: number }>({
+    isDragging: false,
+    startX: 0,
+    startScrollLeft: 0,
+  });
 
   const openMyReviews = async () => {
     setMyReviewsOpen(true);
@@ -56,6 +63,9 @@ export default function AuthButton() {
       const reviews = Array.isArray(result.reviews) ? result.reviews : [];
       setMyReviews(reviews);
       setMyReviewsIndex(0);
+      requestAnimationFrame(() => {
+        if (carouselRef.current) carouselRef.current.scrollLeft = 0;
+      });
     } catch (error) {
       console.error("Failed to load my reviews:", error);
       setMyReviewsError("내 리뷰를 불러오지 못했습니다.");
@@ -64,6 +74,37 @@ export default function AuthButton() {
     } finally {
       setIsLoadingMyReviews(false);
     }
+  };
+
+  const handleMyReviewsMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || !carouselRef.current) return;
+    dragRef.current = {
+      isDragging: true,
+      startX: e.clientX,
+      startScrollLeft: carouselRef.current.scrollLeft,
+    };
+    setIsDraggingMyReviews(true);
+  };
+
+  const handleMyReviewsMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!dragRef.current.isDragging || !carouselRef.current) return;
+    const deltaX = e.clientX - dragRef.current.startX;
+    carouselRef.current.scrollLeft = dragRef.current.startScrollLeft - deltaX;
+  };
+
+  const handleMyReviewsMouseUpOrLeave = () => {
+    if (!dragRef.current.isDragging) return;
+    dragRef.current.isDragging = false;
+    setIsDraggingMyReviews(false);
+  };
+
+  const handleMyReviewsScroll = () => {
+    if (!carouselRef.current) return;
+    const width = carouselRef.current.clientWidth;
+    if (!width) return;
+    const index = Math.round(carouselRef.current.scrollLeft / width);
+    const safeIndex = Math.max(0, Math.min(myReviews.length - 1, index));
+    if (safeIndex !== myReviewsIndex) setMyReviewsIndex(safeIndex);
   };
 
   if (session?.user) {
@@ -209,76 +250,70 @@ export default function AuthButton() {
               ) : (
                 <>
                   <div
+                    ref={carouselRef}
+                    className="hide-scrollbar"
+                    onMouseDown={handleMyReviewsMouseDown}
+                    onMouseMove={handleMyReviewsMouseMove}
+                    onMouseUp={handleMyReviewsMouseUpOrLeave}
+                    onMouseLeave={handleMyReviewsMouseUpOrLeave}
+                    onScroll={handleMyReviewsScroll}
                     style={{
-                      border: "1px solid rgba(140, 112, 81, 0.35)",
-                      borderRadius: 12,
-                      padding: 14,
-                      background: "rgba(71, 104, 44, 0.08)",
+                      display: "flex",
+                      gap: 12,
+                      overflowX: "auto",
+                      scrollSnapType: "x mandatory",
+                      scrollbarWidth: "none",
+                      cursor: isDraggingMyReviews ? "grabbing" : "grab",
                     }}
                   >
-                    <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
-                      {myReviews[myReviewsIndex].storeName ?? `가게 #${myReviews[myReviewsIndex].storeId}`}
-                    </div>
-                    <div style={{ fontSize: 14, marginBottom: 6 }}>
-                      평점 {Number(myReviews[myReviewsIndex].rating).toFixed(1)}점
-                    </div>
-                    <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 6 }}>
-                      {[
-                        myReviews[myReviewsIndex].food ? `음식 ${LABEL_MAP[myReviews[myReviewsIndex].food]}` : null,
-                        myReviews[myReviewsIndex].price ? `가격 ${LABEL_MAP[myReviews[myReviewsIndex].price]}` : null,
-                        myReviews[myReviewsIndex].service ? `서비스 ${LABEL_MAP[myReviews[myReviewsIndex].service]}` : null,
-                        myReviews[myReviewsIndex].space ? `공간 ${LABEL_MAP[myReviews[myReviewsIndex].space]}` : null,
-                        myReviews[myReviewsIndex].waitTime ? `대기 ${LABEL_MAP[myReviews[myReviewsIndex].waitTime]}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ") || "선택 항목 없음"}
-                    </div>
-                    {myReviews[myReviewsIndex].comment && (
-                      <div style={{ fontSize: 14, lineHeight: 1.45, marginBottom: 6 }}>
-                        {myReviews[myReviewsIndex].comment}
+                    {myReviews.map((review) => (
+                      <div
+                        key={review.id}
+                        style={{
+                          minWidth: "100%",
+                          border: "1px solid rgba(140, 112, 81, 0.35)",
+                          borderRadius: 12,
+                          padding: 14,
+                          background: "rgba(71, 104, 44, 0.08)",
+                          scrollSnapAlign: "start",
+                        }}
+                      >
+                        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
+                          {review.storeName ?? `가게 #${review.storeId}`}
+                        </div>
+                        <div style={{ fontSize: 14, marginBottom: 6 }}>
+                          평점 {Number(review.rating).toFixed(1)}점
+                        </div>
+                        <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 6 }}>
+                          {[
+                            review.food ? `음식 ${LABEL_MAP[review.food]}` : null,
+                            review.price ? `가격 ${LABEL_MAP[review.price]}` : null,
+                            review.service ? `서비스 ${LABEL_MAP[review.service]}` : null,
+                            review.space ? `공간 ${LABEL_MAP[review.space]}` : null,
+                            review.waitTime ? `대기 ${LABEL_MAP[review.waitTime]}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "선택 항목 없음"}
+                        </div>
+                        {review.comment && (
+                          <div style={{ fontSize: 14, lineHeight: 1.45, marginBottom: 6 }}>
+                            {review.comment}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 12, color: "#8C7051" }}>
+                          {new Date(review.createdAt).toLocaleString("ko-KR")}
+                        </div>
                       </div>
-                    )}
-                    <div style={{ fontSize: 12, color: "#8C7051" }}>
-                      {new Date(myReviews[myReviewsIndex].createdAt).toLocaleString("ko-KR")}
-                    </div>
+                    ))}
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12 }}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setMyReviewsIndex((prev) => (prev - 1 + myReviews.length) % myReviews.length)
-                      }
-                      style={{
-                        border: "1px solid #8C7051",
-                        borderRadius: 8,
-                        background: "#ffffff",
-                        color: "#28502E",
-                        padding: "6px 10px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      ← 이전
-                    </button>
+                    <span style={{ fontSize: 13, color: "#8C7051" }}>
+                      좌우로 드래그해서 이동
+                    </span>
                     <span style={{ fontSize: 13, color: "#8C7051" }}>
                       {myReviewsIndex + 1} / {myReviews.length}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setMyReviewsIndex((prev) => (prev + 1) % myReviews.length)
-                      }
-                      style={{
-                        border: "1px solid #8C7051",
-                        borderRadius: 8,
-                        background: "#ffffff",
-                        color: "#28502E",
-                        padding: "6px 10px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      다음 →
-                    </button>
                   </div>
                 </>
               )}
