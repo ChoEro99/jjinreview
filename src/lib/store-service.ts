@@ -3210,6 +3210,26 @@ function chooseCanonicalStore(rows: StoreBase[]) {
   })[0];
 }
 
+function looseAddressSignature(address: string | null | undefined) {
+  const raw = (address ?? "").toLowerCase();
+  if (!raw) return "";
+
+  const compact = raw
+    .replace(/[(),]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const roadMatch = compact.match(/[a-zA-Z0-9가-힣]+(?:로|길|ro|gil|road|street)/i);
+  const numberMatch = compact.match(/\d{1,5}(?:-\d{1,4})?/);
+  const districtMatch = compact.match(/[a-zA-Z0-9가-힣]+(?:구|군|시|동|읍|면)/i);
+
+  const road = roadMatch ? normalizeAddressKey(roadMatch[0]) : "";
+  const num = numberMatch ? numberMatch[0] : "";
+  const district = districtMatch ? normalizeAddressKey(districtMatch[0]) : "";
+
+  return [district, road, num].filter(Boolean).join("|");
+}
+
 export async function dedupeStoresByNormalizedNameAddress(options?: {
   dryRun?: boolean;
   maxGroups?: number;
@@ -3257,7 +3277,11 @@ export async function dedupeStoresByNormalizedNameAddress(options?: {
   const grouped = new Map<string, StoreBase[]>();
 
   for (const row of rows) {
-    const key = `${normalizeNameKey(row.name)}|${normalizeAddressKey(row.address)}`;
+    const nameKey = normalizeNameKey(row.name);
+    const strictAddress = normalizeAddressKey(row.address);
+    const looseAddress = looseAddressSignature(row.address);
+    const addressKey = looseAddress || strictAddress;
+    const key = `${nameKey}|${addressKey}`;
     if (!key || key === "|") continue;
     const bucket = grouped.get(key);
     if (bucket) bucket.push(row);
@@ -3298,6 +3322,18 @@ export async function dedupeStoresByNormalizedNameAddress(options?: {
         if (upd.error && !isMissingTableError(upd.error) && !isMissingColumnError(upd.error)) {
           throw new Error(`${tableName}: ${upd.error.message}`);
         }
+      }
+
+      const updUserReviews = await sb
+        .from("user_reviews")
+        .update({ store_id: canonical.id })
+        .in("store_id", sourceIds);
+      if (
+        updUserReviews.error &&
+        !isMissingTableError(updUserReviews.error) &&
+        !isMissingColumnError(updUserReviews.error)
+      ) {
+        throw new Error(`user_reviews: ${updUserReviews.error.message}`);
       }
 
       const updAnalyses = await sb
@@ -3343,6 +3379,18 @@ export async function dedupeStoresByNormalizedNameAddress(options?: {
         !isMissingColumnError(delNaverCache.error)
       ) {
         throw new Error(`naver_signal_cache: ${delNaverCache.error.message}`);
+      }
+
+      const delDetailSnapshots = await sb
+        .from("store_detail_snapshots")
+        .delete()
+        .in("store_id", sourceIds);
+      if (
+        delDetailSnapshots.error &&
+        !isMissingTableError(delDetailSnapshots.error) &&
+        !isMissingColumnError(delDetailSnapshots.error)
+      ) {
+        throw new Error(`store_detail_snapshots: ${delDetailSnapshots.error.message}`);
       }
 
       const delStores = await sb.from("stores").delete().in("id", sourceIds);
