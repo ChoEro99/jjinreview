@@ -1112,7 +1112,8 @@ export async function getStoreDetail(id: number) {
     photosFull,
   };
   
-  // Save snapshot asynchronously (don't wait for it)
+  // Save snapshot asynchronously (fire-and-forget pattern)
+  // Error handling is done inside saveStoreDetailSnapshot, cache failures won't break the response
   saveStoreDetailSnapshot(id, snapshot);
 
   return {
