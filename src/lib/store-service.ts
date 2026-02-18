@@ -945,10 +945,8 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
             .from("store_detail_snapshots")
             .delete()
             .eq("store_id", storeId)
-            .eq("expires_at", data.expires_at);
-          if (error) {
-            console.error("Error deleting expired snapshot:", error);
-          }
+            .lte("expires_at", now.toISOString());
+          if (error) throw error;
         } catch (error) {
           console.error("Error deleting expired snapshot:", error);
         }
