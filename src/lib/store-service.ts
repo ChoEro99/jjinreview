@@ -1289,9 +1289,17 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
   
   // If we have a valid cached snapshot and force sync is off, use cache.
   if (cachedSnapshot && !forceGoogle && Array.isArray(cachedSnapshot.latestGoogleReviews)) {
+    const latestGoogleReviews =
+      cachedSnapshot.latestGoogleReviews.length > 0
+        ? cachedSnapshot.latestGoogleReviews
+        : await loadLatestGoogleReviewsForStore({
+            name: cachedSnapshot.store.name,
+            address: cachedSnapshot.store.address,
+            fallback: cachedSnapshot.latestGoogleReviews,
+          });
     return {
       ...cachedSnapshot,
-      latestGoogleReviews: cachedSnapshot.latestGoogleReviews ?? [],
+      latestGoogleReviews,
       summary: {
         ...cachedSnapshot.summary,
         appAverageRating: freshSummary.appAverageRating,
@@ -1363,15 +1371,10 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     }
   })();
 
-  const latestGoogleReviews = await (async () => {
-    if (!apiKey || !placeForDetail?.id) return [] as StoreDetailSnapshot["latestGoogleReviews"];
-    try {
-      return await getLatestGoogleReviewsFromLegacy(apiKey, placeForDetail.id);
-    } catch (error) {
-      console.error("Failed to fetch latest google reviews:", error);
-      return [] as StoreDetailSnapshot["latestGoogleReviews"];
-    }
-  })();
+  const latestGoogleReviews = await loadLatestGoogleReviewsForStore({
+    name: normalizedStore.name,
+    address: normalizedStore.address,
+  });
 
   const photosResult = await (async () => {
     const photos: string[] = [];
@@ -3609,6 +3612,27 @@ async function getLatestGoogleReviewsFromLegacy(apiKey: string, placeId: string)
           : null,
     }))
     .filter((review) => review.rating > 0 && review.content.length > 0);
+}
+
+async function loadLatestGoogleReviewsForStore(input: {
+  name: string;
+  address: string | null;
+  fallback?: StoreDetailSnapshot["latestGoogleReviews"];
+}) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return input.fallback ?? [];
+
+  try {
+    const place = await findGooglePlaceForStore(apiKey, {
+      name: input.name,
+      address: input.address,
+    });
+    if (!place?.id) return input.fallback ?? [];
+    return await getLatestGoogleReviewsFromLegacy(apiKey, place.id);
+  } catch (error) {
+    console.error("Failed to fetch latest google reviews:", error);
+    return input.fallback ?? [];
+  }
 }
 
 async function updateStoreExternalMeta(input: {
