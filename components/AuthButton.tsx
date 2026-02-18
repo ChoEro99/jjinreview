@@ -4,8 +4,6 @@ import { useRef, useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 
 const MAX_DISPLAY_NAME_LENGTH = 10;
-const STACK_SHIFT_PX = 220;
-const STACK_ANIMATION_MS = 340;
 type OptionValue = "good" | "normal" | "bad" | "expensive" | "cheap" | "enough" | "narrow" | "short" | "long" | null;
 
 type MyReview = {
@@ -42,8 +40,6 @@ export default function AuthButton() {
   const [isLoadingMyReviews, setIsLoadingMyReviews] = useState(false);
   const [myReviewsError, setMyReviewsError] = useState<string | null>(null);
   const [isDraggingMyReviews, setIsDraggingMyReviews] = useState(false);
-  const [stackOffset, setStackOffset] = useState(0);
-  const [isStackAnimating, setIsStackAnimating] = useState(false);
   const dragRef = useRef<{ isDragging: boolean; startX: number; moved: boolean }>({
     isDragging: false,
     startX: 0,
@@ -78,19 +74,13 @@ export default function AuthButton() {
   };
 
   const moveReviewIndex = (direction: -1 | 1) => {
-    if (myReviews.length <= 1 || isStackAnimating) return;
-    setIsStackAnimating(true);
-    setStackOffset(direction === 1 ? -STACK_SHIFT_PX : STACK_SHIFT_PX);
-    window.setTimeout(() => {
-      setMyReviewsIndex((prev) => {
-        const next = prev + direction;
-        if (next < 0) return myReviews.length - 1;
-        if (next >= myReviews.length) return 0;
-        return next;
-      });
-      setStackOffset(0);
-      setIsStackAnimating(false);
-    }, STACK_ANIMATION_MS);
+    if (myReviews.length <= 1) return;
+    setMyReviewsIndex((prev) => {
+      const next = prev + direction;
+      if (next < 0) return myReviews.length - 1;
+      if (next >= myReviews.length) return 0;
+      return next;
+    });
   };
 
   const handleMyReviewsMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -104,13 +94,12 @@ export default function AuthButton() {
   };
 
   const handleMyReviewsMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!dragRef.current.isDragging || isStackAnimating) return;
+    if (!dragRef.current.isDragging) return;
     const deltaX = e.clientX - dragRef.current.startX;
     if (Math.abs(deltaX) < 45) return;
     dragRef.current.moved = true;
+    dragRef.current.startX = e.clientX;
     moveReviewIndex(deltaX > 0 ? -1 : 1);
-    dragRef.current.isDragging = false;
-    setIsDraggingMyReviews(false);
   };
 
   const handleMyReviewsMouseUpOrLeave = () => {
@@ -120,7 +109,7 @@ export default function AuthButton() {
   };
 
   const handleMyReviewsWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (myReviews.length <= 1 || isStackAnimating) return;
+    if (myReviews.length <= 1) return;
     const dominantDelta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
     if (Math.abs(dominantDelta) < 8) return;
     e.preventDefault();
@@ -368,21 +357,9 @@ export default function AuthButton() {
                           marginBottom: 12,
                         }}
                       >
-                        <div
-                          style={{
-                            position: "absolute",
-                            inset: 0,
-                            transform: `translateX(${stackOffset}px)`,
-                            transition: isStackAnimating
-                              ? `transform ${STACK_ANIMATION_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
-                              : "none",
-                            willChange: "transform",
-                          }}
-                        >
-                          {myReviews.length > 1 && renderReviewCard(prev, "left")}
-                          {renderReviewCard(current, "center")}
-                          {myReviews.length > 1 && renderReviewCard(next, "right")}
-                        </div>
+                        {myReviews.length > 1 && renderReviewCard(prev, "left")}
+                        {renderReviewCard(current, "center")}
+                        {myReviews.length > 1 && renderReviewCard(next, "right")}
                       </div>
                     );
                   })()}
