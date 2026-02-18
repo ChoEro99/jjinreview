@@ -107,6 +107,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const storeDetailCache = useRef<Map<number, StoreDetail>>(new Map());
   // Track the currently selected store for async operations
   const selectedStoreIdRef = useRef<number | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -195,62 +196,84 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   };
 
   const handleStoreClick = async (storeId: number) => {
+    // 이전 진행 중인 fetch 취소
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setSelectedStoreId(storeId);
-    selectedStoreIdRef.current = storeId; // Update ref for async checks
-    setFailedPhotos(new Set()); // Reset failed photos when switching stores
-    setFetchError(false); // Reset error state
-    
+    selectedStoreIdRef.current = storeId;
+    setFailedPhotos(new Set());
+    setFetchError(false);
+
     const cached = storeDetailCache.current.get(storeId);
     if (cached) {
-      // Show cached data immediately - no loading spinner
+      // 캐시 있으면 즉시 표시, 로딩 없음
       setStoreDetail(cached);
       setIsLoadingDetail(false);
-    } else {
-      // No cache - show loading spinner
-      setIsLoadingDetail(true);
-      setStoreDetail(null);
+      // 백그라운드에서 최신 데이터 갱신 (UI는 안 건드림)
+      fetch(`/api/stores/${storeId}`, { signal: controller.signal })
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data?.ok && selectedStoreIdRef.current === storeId) {
+            storeDetailCache.current.set(storeId, data);
+            setStoreDetail(data);
+          }
+        })
+        .catch((error) => {
+          // AbortError는 정상 취소이므로 무시
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          // 백그라운드 갱신 실패는 캐시가 이미 표시 중이므로 로깅만
+          console.error("Background refresh failed for store", storeId, ":", error);
+        });
+      return;
     }
 
-    // Always fetch fresh data (revalidate)
+    // 캐시 없으면 로딩 표시
+    setIsLoadingDetail(true);
+    setStoreDetail(null);
+
     try {
-      const response = await fetch(`/api/stores/${storeId}`);
+      const response = await fetch(`/api/stores/${storeId}`, {
+        signal: controller.signal,
+      });
+
+      if (selectedStoreIdRef.current !== storeId) return;
+
       if (response.ok) {
         const data = await response.json();
         if (data.ok) {
           storeDetailCache.current.set(storeId, data);
-          // Only update if this store is still selected
           if (selectedStoreIdRef.current === storeId) {
             setStoreDetail(data);
             setFetchError(false);
           }
         } else {
-          // API returned ok: false - keep cached data if available
-          console.error("API returned error for store", storeId, ":", data?.error ?? "Unknown error");
-          if (!cached) {
-            // No cache available - set error state
+          if (selectedStoreIdRef.current === storeId) {
             setStoreDetail(null);
             setFetchError(true);
           }
         }
       } else {
-        // HTTP error (4xx, 5xx) - keep cached data if available
-        console.error("HTTP error for store", storeId, ":", response.status, response.statusText);
-        if (!cached) {
-          // No cache available - set error state
+        if (selectedStoreIdRef.current === storeId) {
           setStoreDetail(null);
           setFetchError(true);
         }
       }
     } catch (error) {
-      // Network or other error - keep cached data if available
-      console.error("Failed to load store detail:", error);
-      if (!cached) {
-        // No cache available - set error state
+      // AbortError는 정상 취소이므로 에러 표시 안 함
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (selectedStoreIdRef.current === storeId) {
         setStoreDetail(null);
         setFetchError(true);
       }
     } finally {
-      setIsLoadingDetail(false);
+      // 현재 선택된 가게의 요청만 로딩 해제
+      if (selectedStoreIdRef.current === storeId) {
+        setIsLoadingDetail(false);
+      }
     }
   };
 
