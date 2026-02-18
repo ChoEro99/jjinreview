@@ -939,6 +939,7 @@ async function getStoreDetailSnapshot(storeId: number): Promise<StoreDetailSnaps
     
     if (now > expiresAt) {
       // Snapshot expired, return null to trigger recalculation
+      await sb.from("store_detail_snapshots").delete().eq("store_id", storeId);
       return null;
     }
     
