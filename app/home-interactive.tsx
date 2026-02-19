@@ -170,6 +170,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
   });
   const suppressCardClickRef = useRef(false);
   const hasAutoOpenedStoreFromQueryRef = useRef(false);
+  const nearbyCompareSectionRef = useRef<HTMLDivElement | null>(null);
 
   const syncStoreIdToUrl = useCallback(
     (storeId: number | null, historyMode: "push" | "replace" = "push") => {
@@ -1057,7 +1058,29 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                       
                       return (
                         <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 700, color: "#28502E", marginBottom: 16 }}>
-                          📍 1km 이내 상위 {percentile}% ({rank}위 / {total}개)
+                          <button
+                            type="button"
+                            onClick={() => {
+                              nearbyCompareSectionRef.current?.scrollIntoView({
+                                behavior: "smooth",
+                                block: "start",
+                              });
+                            }}
+                            style={{
+                              border: "none",
+                              background: "transparent",
+                              padding: 0,
+                              margin: 0,
+                              color: "#28502E",
+                              fontSize: isMobile ? 16 : 18,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              textAlign: "left",
+                              textDecoration: "underline",
+                            }}
+                          >
+                            📍 1km 이내 상위 {percentile}% ({rank}위 / {total}개)
+                          </button>
                         </div>
                       );
                     })()}
@@ -1337,7 +1360,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
 
               <div style={{ marginBottom: 24 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
-                  구글 최신 리뷰 5개
+                  최신 리뷰
                 </h3>
                 {storeDetail.latestGoogleReviews && storeDetail.latestGoogleReviews.length > 0 ? (
                   <div style={{ display: "grid", gap: 10 }}>
@@ -1379,6 +1402,67 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
               </div>
 
               <div style={{ marginBottom: 24 }}>
+                <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
+                  리뷰랩 리뷰
+                </h3>
+
+                <div style={{ display: "grid", gap: 12 }}>
+                  {storeDetail.reviews.map((review) => {
+                    const adAny = review.latestAnalysis
+                      ? calculateCombinedAdRisk(
+                          review.latestAnalysis.adRisk,
+                          review.latestAnalysis.undisclosedAdRisk
+                        )
+                      : null;
+
+                    return (
+                      <div
+                        key={`${review.source}-${review.id}`}
+                        style={{
+                          border: "1px solid rgba(140, 112, 81, 0.3)",
+                          borderRadius: 12,
+                          padding: 14,
+                          background: (adAny ?? 0) >= 0.6 ? "rgba(140, 112, 81, 0.15)" : "rgba(71, 104, 44, 0.06)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 12,
+                            fontSize: 14,
+                            marginBottom: 8,
+                            color: "#28502E",
+                          }}
+                        >
+                          <strong>{review.rating.toFixed(1)}점</strong>
+                          <span>{review.source === "external" ? "외부" : "앱"}</span>
+                          <span style={{ color: "#47682C", fontWeight: 700 }}>
+                            ★ 앱 점수 {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"}
+                          </span>
+                          {review.authorStats && (
+                            <span>
+                              작성자 리뷰 {review.authorStats.reviewCount}개 · 평균 {review.authorStats.averageRating.toFixed(1)}점
+                            </span>
+                          )}
+                        </div>
+                        <p style={{ lineHeight: 1.5, margin: "8px 0", color: "#28502E" }}>{review.content}</p>
+                        {review.latestAnalysis && (
+                          <div style={{ fontSize: 12, color: "#8C7051", marginBottom: 6 }}>
+                            근거: {review.latestAnalysis.reasonSummary}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 12, color: "#8C7051" }}>
+                          {review.authorName ?? "익명"} ·{" "}
+                          {new Date(review.createdAt).toLocaleString("ko-KR")}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div ref={nearbyCompareSectionRef} style={{ marginBottom: 24 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
                   1km 이내 가게 비교
                 </h3>
@@ -1480,67 +1564,6 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                   리뷰 작성
                 </h3>
                 <UserReviewForm storeId={selectedStoreId!} />
-              </div>
-
-              <div>
-                <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
-                  전체 리뷰 ({storeDetail.reviews.length})
-                </h3>
-
-                <div style={{ display: "grid", gap: 12 }}>
-                  {storeDetail.reviews.map((review) => {
-                    const adAny = review.latestAnalysis
-                      ? calculateCombinedAdRisk(
-                          review.latestAnalysis.adRisk,
-                          review.latestAnalysis.undisclosedAdRisk
-                        )
-                      : null;
-
-                    return (
-                      <div
-                        key={`${review.source}-${review.id}`}
-                        style={{
-                          border: "1px solid rgba(140, 112, 81, 0.3)",
-                          borderRadius: 12,
-                          padding: 14,
-                          background: (adAny ?? 0) >= 0.6 ? "rgba(140, 112, 81, 0.15)" : "rgba(71, 104, 44, 0.06)",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            flexWrap: "wrap",
-                            gap: 12,
-                            fontSize: 14,
-                            marginBottom: 8,
-                            color: "#28502E",
-                          }}
-                        >
-                          <strong>{review.rating.toFixed(1)}점</strong>
-                          <span>{review.source === "external" ? "외부" : "앱"}</span>
-                          <span style={{ color: "#47682C", fontWeight: 700 }}>
-                            ★ 앱 점수 {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"}
-                          </span>
-                          {review.authorStats && (
-                            <span>
-                              작성자 리뷰 {review.authorStats.reviewCount}개 · 평균 {review.authorStats.averageRating.toFixed(1)}점
-                            </span>
-                          )}
-                        </div>
-                        <p style={{ lineHeight: 1.5, margin: "8px 0", color: "#28502E" }}>{review.content}</p>
-                        {review.latestAnalysis && (
-                          <div style={{ fontSize: 12, color: "#8C7051", marginBottom: 6 }}>
-                            근거: {review.latestAnalysis.reasonSummary}
-                          </div>
-                        )}
-                        <div style={{ fontSize: 12, color: "#8C7051" }}>
-                          {review.authorName ?? "익명"} ·{" "}
-                          {new Date(review.createdAt).toLocaleString("ko-KR")}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
               </div>
             </div>
           )}
