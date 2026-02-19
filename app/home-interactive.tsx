@@ -685,51 +685,54 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         >
           <div style={{ padding: isMobile ? 12 : 20 }}>
             <form onSubmit={handleSearch} style={{ marginBottom: isMobile ? 12 : 20 }}>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="가게 이름이나 주소로 검색..."
-                style={{
-                  width: "100%",
-                  padding: isMobile ? "11px 12px" : "12px 16px",
-                  border: "1px solid rgba(140, 112, 81, 0.3)",
-                  borderRadius: 8,
-                  fontSize: isMobile ? 14 : 15,
-                  outline: "none",
-                  background: "rgba(71, 104, 44, 0.04)",
-                  color: "#28502E",
-                }}
-              />
-              <button
-                type="submit"
-                disabled={isSearching}
-                style={{
-                  width: "100%",
-                  marginTop: 8,
-                  padding: isMobile ? "11px 12px" : "12px 16px",
-                  background: isSearching ? "#ccc" : "#28502E",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: 8,
-                  fontSize: isMobile ? 14 : 15,
-                  fontWeight: 700,
-                  cursor: isSearching ? "not-allowed" : "pointer",
-                  transition: "all 0.2s ease",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isSearching) {
-                    e.currentTarget.style.background = "#47682C";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isSearching) {
-                    e.currentTarget.style.background = "#28502E";
-                  }
-                }}
-              >
-                {isSearching ? "검색 중..." : "검색"}
-              </button>
+              <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="가게 이름이나 주소로 검색..."
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: isMobile ? "11px 12px" : "12px 16px",
+                    border: "1px solid rgba(140, 112, 81, 0.3)",
+                    borderRadius: 8,
+                    fontSize: isMobile ? 14 : 15,
+                    outline: "none",
+                    background: "rgba(71, 104, 44, 0.04)",
+                    color: "#28502E",
+                  }}
+                />
+                <button
+                  type="submit"
+                  disabled={isSearching}
+                  style={{
+                    minWidth: isMobile ? 88 : 98,
+                    padding: isMobile ? "11px 12px" : "12px 16px",
+                    background: isSearching ? "#ccc" : "#28502E",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: 8,
+                    fontSize: isMobile ? 14 : 15,
+                    fontWeight: 700,
+                    cursor: isSearching ? "not-allowed" : "pointer",
+                    transition: "all 0.2s ease",
+                    whiteSpace: "nowrap",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSearching) {
+                      e.currentTarget.style.background = "#47682C";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSearching) {
+                      e.currentTarget.style.background = "#28502E";
+                    }
+                  }}
+                >
+                  {isSearching ? "검색 중..." : "검색"}
+                </button>
+              </div>
             </form>
             {isLocating && (
               <div style={{ marginTop: -4, marginBottom: 8, fontSize: 12, color: "#8C7051" }}>
@@ -741,30 +744,33 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 {locationErrorMessage}
               </div>
             )}
-            {currentLocationLabel && (
-              <div style={{ marginTop: -4, marginBottom: 8, fontSize: 12, color: "#47682C", fontWeight: 700 }}>
-                현재 위치: {currentLocationLabel}
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={handleLocateAndRecommend}
-              disabled={isLocating}
-              style={{
-                width: "100%",
-                marginBottom: 8,
-                padding: isMobile ? "10px 12px" : "11px 16px",
-                background: isLocating ? "#ccc" : "#47682C",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: 8,
-                fontSize: isMobile ? 13 : 14,
-                fontWeight: 700,
-                cursor: isLocating ? "not-allowed" : "pointer",
-              }}
-            >
-              {isLocating ? "위치 확인 중..." : "현재 위치로 다시 추천받기"}
-            </button>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+              {currentLocationLabel ? (
+                <div style={{ fontSize: 12, color: "#47682C", fontWeight: 700, flex: 1, minWidth: 0 }}>
+                  현재 위치: {currentLocationLabel}
+                </div>
+              ) : (
+                <div style={{ flex: 1 }} />
+              )}
+              <button
+                type="button"
+                onClick={handleLocateAndRecommend}
+                disabled={isLocating}
+                style={{
+                  padding: isMobile ? "8px 10px" : "9px 12px",
+                  background: isLocating ? "#ccc" : "#47682C",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: 8,
+                  fontSize: isMobile ? 12 : 13,
+                  fontWeight: 700,
+                  cursor: isLocating ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {isLocating ? "위치 확인 중..." : "다시 추천받기"}
+              </button>
+            </div>
 
             <div
               ref={storeListRef}
