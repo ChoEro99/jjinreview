@@ -657,7 +657,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         style={{
           background: "#28502E",
           color: "#ffffff",
-          padding: isMobile ? "14px 16px 10px" : "24px 20px",
+          padding: isMobile ? "12px 164px 8px 16px" : "24px 20px",
           textAlign: "center",
         }}
       >

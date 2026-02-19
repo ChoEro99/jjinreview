@@ -199,7 +199,7 @@ export default function AuthButton() {
       <div
         style={{
           position: "fixed",
-          top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 10px)" : 16,
+          top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 6px)" : 16,
           right: isMobile ? 10 : 16,
           zIndex: 1000,
           display: "flex",
@@ -254,8 +254,8 @@ export default function AuthButton() {
             border: "1px solid #28502E",
             borderRadius: 8,
             boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            padding: isMobile ? "7px 12px" : "8px 16px",
-            fontSize: isMobile ? 12 : 13,
+            padding: isMobile ? "6px 10px" : "8px 16px",
+            fontSize: isMobile ? 11 : 13,
             fontWeight: 600,
             cursor: "pointer",
             transition: "all 0.2s",
@@ -475,7 +475,7 @@ export default function AuthButton() {
     <div
       style={{
         position: "fixed",
-        top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 10px)" : 16,
+        top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 6px)" : 16,
         right: isMobile ? 10 : 16,
         zIndex: 1000,
       }}
@@ -488,8 +488,8 @@ export default function AuthButton() {
           border: "1px solid #28502E",
           borderRadius: 8,
           boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-          padding: isMobile ? "7px 12px" : "8px 16px",
-          fontSize: isMobile ? 12 : 13,
+          padding: isMobile ? "6px 10px" : "8px 16px",
+          fontSize: isMobile ? 11 : 13,
           fontWeight: 600,
           cursor: "pointer",
           transition: "all 0.2s",
