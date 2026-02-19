@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Image from "next/image";
+import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 import UserReviewForm from "@/components/UserReviewForm";
 
@@ -150,6 +152,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const [showAllComparedStores, setShowAllComparedStores] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [currentLocationLabel, setCurrentLocationLabel] = useState<string | null>(null);
+  const [locationErrorMessage, setLocationErrorMessage] = useState<string | null>(null);
   const hasAttemptedNearbyAutoLoadRef = useRef(false);
   
   // Cache for store details to avoid re-fetching
@@ -537,66 +540,101 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   }, [storeCards, listScrollTop, listViewportHeight]);
 
   const handleLocateAndRecommend = useCallback(() => {
-    if (typeof window === "undefined" || !("geolocation" in navigator)) {
-      return;
-    }
-    setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const coords = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        };
-        void (async () => {
-          try {
-            const reversePromise = fetch(
-              `/api/geocode/reverse?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(
-                coords.longitude
-              )}`
-            )
-              .then((res) => (res.ok ? res.json() : null))
-              .then((payload: { ok?: boolean; label?: string } | null) => {
-                if (payload?.ok && typeof payload.label === "string") {
-                  setCurrentLocationLabel(payload.label);
-                }
-              })
-              .catch(() => null);
+    void (async () => {
+      if (typeof window === "undefined") return;
+      setIsLocating(true);
+      setLocationErrorMessage(null);
+      try {
+        let coords: { latitude: number; longitude: number } | null = null;
 
-            const response = await fetch("/api/stores/nearby", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-                limit: 10,
-              }),
-            });
-            if (!response.ok) throw new Error("nearby api failed");
-            const data = (await response.json()) as {
-              ok?: boolean;
-              recommendations?: NearbyRecommendationApiRow[];
-            };
-            if (!data.ok || !Array.isArray(data.recommendations)) {
-              throw new Error("invalid nearby response");
+        if (Capacitor.isNativePlatform()) {
+          const permission = await Geolocation.checkPermissions();
+          const hasPermission =
+            permission.location === "granted" || permission.coarseLocation === "granted";
+          if (!hasPermission) {
+            const requested = await Geolocation.requestPermissions();
+            const granted =
+              requested.location === "granted" || requested.coarseLocation === "granted";
+            if (!granted) {
+              throw new Error("location_permission_denied");
             }
-            const normalized = data.recommendations.map((row) => row.store);
-            if (normalized.length > 0) {
-              setDefaultListStores(normalized);
-              setStores(normalized);
-            }
-            await reversePromise;
-          } catch {
-            // Keep existing list on failure.
-          } finally {
-            setIsLocating(false);
           }
-        })();
-      },
-      () => {
+          const nativePosition = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 60_000,
+          });
+          coords = {
+            latitude: nativePosition.coords.latitude,
+            longitude: nativePosition.coords.longitude,
+          };
+        } else if ("geolocation" in navigator) {
+          const webPosition = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 60_000,
+            });
+          });
+          coords = {
+            latitude: webPosition.coords.latitude,
+            longitude: webPosition.coords.longitude,
+          };
+        }
+
+        if (!coords) {
+          throw new Error("geolocation_unavailable");
+        }
+
+        const reversePromise = fetch(
+          `/api/geocode/reverse?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(
+            coords.longitude
+          )}`
+        )
+          .then((res) => (res.ok ? res.json() : null))
+          .then((payload: { ok?: boolean; label?: string } | null) => {
+            if (payload?.ok && typeof payload.label === "string") {
+              setCurrentLocationLabel(payload.label);
+            }
+          })
+          .catch(() => null);
+
+        const response = await fetch("/api/stores/nearby", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            limit: 10,
+          }),
+        });
+        if (!response.ok) throw new Error("nearby_api_failed");
+        const data = (await response.json()) as {
+          ok?: boolean;
+          recommendations?: NearbyRecommendationApiRow[];
+        };
+        if (!data.ok || !Array.isArray(data.recommendations)) {
+          throw new Error("invalid_nearby_response");
+        }
+        const normalized = data.recommendations.map((row) => row.store);
+        if (normalized.length > 0) {
+          setDefaultListStores(normalized);
+          setStores(normalized);
+        }
+        await reversePromise;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (message.includes("denied") || message.includes("permission")) {
+          setLocationErrorMessage("위치 권한이 꺼져 있어요. 앱 설정에서 위치 권한을 허용해 주세요.");
+        } else if (message.includes("unavailable")) {
+          setLocationErrorMessage("이 기기에서는 위치 정보를 사용할 수 없어요.");
+        } else {
+          setLocationErrorMessage("현재 위치를 가져오지 못했어요. 잠시 후 다시 시도해 주세요.");
+        }
+      } finally {
         setIsLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60_000 }
-    );
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -611,7 +649,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     return 1 - (1 - adRisk) * (1 - undisclosedAdRisk);
   };
 
-  const HEADER_AND_SEARCH_HEIGHT = isMobile ? 238 : 280; // Height of header + search form + padding
+  const HEADER_AND_SEARCH_HEIGHT = isMobile ? 212 : 280; // Height of header + search form + padding
 
   return (
     <div style={{ minHeight: "100vh", background: "rgba(71, 104, 44, 0.08)", color: "#28502E" }}>
@@ -619,7 +657,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         style={{
           background: "#28502E",
           color: "#ffffff",
-          padding: isMobile ? "54px 16px 16px" : "24px 20px",
+          padding: isMobile ? "22px 16px 14px" : "24px 20px",
           textAlign: "center",
         }}
       >
@@ -698,11 +736,35 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                 현재 위치 기준으로 가게 목록을 불러오는 중...
               </div>
             )}
+            {locationErrorMessage && (
+              <div style={{ marginTop: -4, marginBottom: 8, fontSize: 12, color: "#B94A48", fontWeight: 700 }}>
+                {locationErrorMessage}
+              </div>
+            )}
             {currentLocationLabel && (
               <div style={{ marginTop: -4, marginBottom: 8, fontSize: 12, color: "#47682C", fontWeight: 700 }}>
                 현재 위치: {currentLocationLabel}
               </div>
             )}
+            <button
+              type="button"
+              onClick={handleLocateAndRecommend}
+              disabled={isLocating}
+              style={{
+                width: "100%",
+                marginBottom: 8,
+                padding: isMobile ? "10px 12px" : "11px 16px",
+                background: isLocating ? "#ccc" : "#47682C",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: 8,
+                fontSize: isMobile ? 13 : 14,
+                fontWeight: 700,
+                cursor: isLocating ? "not-allowed" : "pointer",
+              }}
+            >
+              {isLocating ? "위치 확인 중..." : "현재 위치로 다시 추천받기"}
+            </button>
 
             <div
               ref={storeListRef}
@@ -891,8 +953,16 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                             평점 믿음 지수 {detailReviewCount > 0 ? `${emoji} ${label} (${totalScore}점)` : "-"}
                           </div>
                           {detailReviewCount > 0 && (
-                            <div style={{ fontSize: isMobile ? 12 : 13, color: "#8C7051", marginTop: 4 }}>
-                              {breakdown.sampleSizeDesc} (표본 {breakdown.sampleSize}점 {breakdown.sampleSizeEmoji}) · {breakdown.stabilityDesc} (안정성 {breakdown.stability}점 {breakdown.stabilityEmoji}) · {breakdown.freshnessDesc} (최신성 {breakdown.freshness}점 {breakdown.freshnessEmoji})
+                            <div style={{ fontSize: isMobile ? 12 : 13, color: "#8C7051", marginTop: 6 }}>
+                              <div style={{ lineHeight: 1.45 }}>
+                                {breakdown.sampleSizeDesc} (표본 {breakdown.sampleSize}점 {breakdown.sampleSizeEmoji})
+                              </div>
+                              <div style={{ lineHeight: 1.45 }}>
+                                {breakdown.stabilityDesc} (안정성 {breakdown.stability}점 {breakdown.stabilityEmoji})
+                              </div>
+                              <div style={{ lineHeight: 1.45 }}>
+                                {breakdown.freshnessDesc} (최신성 {breakdown.freshness}점 {breakdown.freshnessEmoji})
+                              </div>
                             </div>
                           )}
                         </div>
