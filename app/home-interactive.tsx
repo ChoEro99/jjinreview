@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
@@ -37,6 +36,7 @@ interface StoreWithSummary extends StoreBase {
 
 interface HomeInteractiveProps {
   stores: StoreWithSummary[];
+  initialStoreId?: number | null;
 }
 
 interface StoreDetail {
@@ -130,7 +130,7 @@ function isAbortLikeError(error: unknown) {
   );
 }
 
-const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
+const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeInteractiveProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [stores, setStores] = useState<StoreWithSummary[]>(initialStores.slice(0, 10));
@@ -171,6 +171,23 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
   const suppressCardClickRef = useRef(false);
   const hasAutoOpenedStoreFromQueryRef = useRef(false);
 
+  const syncStoreIdToUrl = useCallback(
+    (storeId: number | null, historyMode: "push" | "replace" = "push") => {
+      const params = new URLSearchParams(window.location.search);
+      if (storeId !== null) params.set("storeId", String(storeId));
+      else params.delete("storeId");
+
+      const nextQuery = params.toString();
+      const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+      const currentUrl = `${window.location.pathname}${window.location.search}`;
+      if (nextUrl === currentUrl) return;
+
+      if (historyMode === "replace") window.history.replaceState({}, "", nextUrl);
+      else window.history.pushState({}, "", nextUrl);
+    },
+    []
+  );
+
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
@@ -191,6 +208,26 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
       window.removeEventListener("resize", debouncedCheckMobile);
     };
   }, []);
+
+  const handleCloseDetail = useCallback(
+    (options?: { syncUrl?: boolean; historyMode?: "push" | "replace" }) => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      setSelectedStoreId(null);
+      selectedStoreIdRef.current = null;
+      setStoreDetail(null);
+      setIsLoadingDetail(false);
+      setIsReviewFormOpen(false);
+      setShowAllComparedStores(false);
+
+      const shouldSyncUrl = options?.syncUrl ?? true;
+      if (shouldSyncUrl) {
+        syncStoreIdToUrl(null, options?.historyMode ?? "push");
+      }
+    },
+    [syncStoreIdToUrl]
+  );
 
   const handleNextPhoto = useCallback(() => {
     const photosFull = storeDetail?.photosFull;
@@ -311,7 +348,15 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     return () => window.removeEventListener("resize", updateListViewport);
   }, []);
 
-  const handleStoreClick = useCallback(async (storeId: number) => {
+  const handleStoreClick = useCallback(async (
+    storeId: number,
+    options?: { syncUrl?: boolean; historyMode?: "push" | "replace" }
+  ) => {
+    const shouldSyncUrl = options?.syncUrl ?? true;
+    if (shouldSyncUrl) {
+      syncStoreIdToUrl(storeId, options?.historyMode ?? "push");
+    }
+
     // 이전 진행 중인 fetch 취소
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -388,7 +433,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         setIsLoadingDetail(false);
       }
     }
-  }, []);
+  }, [syncStoreIdToUrl]);
 
   const handleComparedStoreClick = async (storeId: number | string, storeName: string, storeAddress: string | null) => {
     // If it's a number, it's already a registered store ID
@@ -459,18 +504,43 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
 
   useEffect(() => {
     if (hasAutoOpenedStoreFromQueryRef.current) return;
+    if (typeof initialStoreId === "number" && Number.isFinite(initialStoreId) && initialStoreId > 0) {
+      hasAutoOpenedStoreFromQueryRef.current = true;
+      void handleStoreClick(initialStoreId, { syncUrl: false });
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     const rawStoreId = params.get("storeId");
     if (!rawStoreId) return;
     const storeId = Number(rawStoreId);
     if (!Number.isFinite(storeId) || storeId <= 0) return;
     hasAutoOpenedStoreFromQueryRef.current = true;
-    void handleStoreClick(storeId);
-    params.delete("storeId");
-    const nextQuery = params.toString();
-    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
-    window.history.replaceState({}, "", nextUrl);
-  }, [handleStoreClick]);
+    void handleStoreClick(storeId, { syncUrl: false });
+  }, [handleStoreClick, initialStoreId]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const rawStoreId = params.get("storeId");
+      const nextStoreId = rawStoreId ? Number(rawStoreId) : null;
+
+      if (nextStoreId !== null && Number.isFinite(nextStoreId) && nextStoreId > 0) {
+        if (selectedStoreIdRef.current !== nextStoreId) {
+          void handleStoreClick(nextStoreId, { syncUrl: false });
+        }
+        return;
+      }
+
+      if (selectedStoreIdRef.current !== null) {
+        handleCloseDetail({ syncUrl: false });
+      }
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, [handleCloseDetail, handleStoreClick]);
 
   useEffect(() => {
     const onOpenStoreDetail = (event: Event) => {
@@ -822,25 +892,6 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                     <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 8 }}>
                       {store.address ?? "주소 정보 없음"}
                     </div>
-                    <div style={{ marginBottom: 8 }}>
-                      <Link
-                        href={`/stores/${store.id}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          if (suppressCardClickRef.current) {
-                            event.preventDefault();
-                          }
-                        }}
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: "#28502E",
-                          textDecoration: "underline",
-                        }}
-                      >
-                        상세 페이지 보기
-                      </Link>
-                    </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
                       <span style={{ color: "#28502E" }}>
                         ⭐ {store.summary.weightedRating?.toFixed(1) ?? "-"} ({externalCount}개)
@@ -874,7 +925,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         >
           {isMobile && (
             <button
-              onClick={() => setSelectedStoreId(null)}
+              onClick={() => handleCloseDetail()}
               style={{
                 marginBottom: 16,
                 padding: "8px 16px",
