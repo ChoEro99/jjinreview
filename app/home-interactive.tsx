@@ -1136,7 +1136,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                             lineHeight: 1.4,
                           }}
                         >
-                          {storeDetail.store.address}
+                          📍 지도에서 보기
                         </button>
                       ) : (
                         "주소 정보 없음"
