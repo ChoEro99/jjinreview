@@ -503,6 +503,34 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
     }
   };
 
+  const openNaverMap = useCallback((storeName: string, storeAddress: string) => {
+    const query = `${storeName} ${storeAddress}`.trim();
+    const encodedQuery = encodeURIComponent(query);
+    const webUrl = `https://map.naver.com/v5/search/${encodedQuery}`;
+    const appUrl = `nmap://search?query=${encodedQuery}`;
+    const isMobileUa = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+
+    if (!isMobileUa) {
+      window.open(webUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    let didHide = false;
+    const onVisibilityChange = () => {
+      if (document.hidden) didHide = true;
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.location.href = appUrl;
+
+    window.setTimeout(() => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (!didHide) {
+        window.location.href = webUrl;
+      }
+    }, 900);
+  }, []);
+
   useEffect(() => {
     if (hasAutoOpenedStoreFromQueryRef.current) return;
     if (typeof initialStoreId === "number" && Number.isFinite(initialStoreId) && initialStoreId > 0) {
@@ -1076,7 +1104,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                               fontWeight: 700,
                               cursor: "pointer",
                               textAlign: "left",
-                              textDecoration: "underline",
+                              textDecoration: "none",
                             }}
                           >
                             📍 1km 이내 상위 {percentile}% ({rank}위 / {total}개)
@@ -1085,9 +1113,32 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                       );
                     })()}
 
-                    {/* 부가 정보 한 줄 */}
+                    {/* 주소 링크 */}
                     <div style={{ fontSize: isMobile ? 12 : 13, color: "#8C7051", lineHeight: 1.4 }}>
-                      리뷰 {Math.max(storeDetail.insight?.reviewCount ?? 0, storeDetail.summary.reviewCount)}개 · 1km 이내 가게 비교 · {storeDetail.store.address ?? "주소 정보 없음"}
+                      {storeDetail.store.address ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openNaverMap(storeDetail.store.name, storeDetail.store.address)
+                          }
+                          style={{
+                            border: "none",
+                            background: "transparent",
+                            padding: 0,
+                            margin: 0,
+                            color: "#8C7051",
+                            textDecoration: "none",
+                            cursor: "pointer",
+                            textAlign: "left",
+                            fontSize: isMobile ? 12 : 13,
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          {storeDetail.store.address}
+                        </button>
+                      ) : (
+                        "주소 정보 없음"
+                      )}
                     </div>
                   </div>
 
