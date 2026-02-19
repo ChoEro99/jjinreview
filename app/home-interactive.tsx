@@ -1082,8 +1082,6 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                       
                       const rank = selfStore.rank;
                       const total = storeDetail.insight.comparedStores.length;
-                      const percentile = Math.round((rank / total) * 100);
-                      
                       return (
                         <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 700, color: "#28502E", marginBottom: 16 }}>
                           <button
@@ -1107,7 +1105,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                               textDecoration: "none",
                             }}
                           >
-                            📍 1km 이내 상위 {percentile}% ({rank}위 / {total}개)
+                            📍 1km 이내 종합점수 {rank}위 / {total}개
                           </button>
                         </div>
                       );
@@ -1132,7 +1130,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                             textDecoration: "none",
                             cursor: "pointer",
                             textAlign: "left",
-                            fontSize: isMobile ? 12 : 13,
+                            fontSize: isMobile ? 14 : 15,
                             lineHeight: 1.4,
                           }}
                         >
