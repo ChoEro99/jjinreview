@@ -43,11 +43,10 @@ function computeFreshnessScore(latestReviewAt?: string | null): number {
   const ts = Date.parse(latestReviewAt);
   if (!Number.isFinite(ts)) return 10;
   const days = (Date.now() - ts) / (24 * 60 * 60 * 1000);
-  if (days <= 1) return 25;
-  if (days <= 3) return 22;
-  if (days <= 7) return 19;
-  if (days <= 14) return 14;
-  if (days <= 30) return 9;
+  if (days <= 7) return 25;
+  if (days <= 14) return 18;
+  if (days <= 30) return 12;
+  if (days <= 60) return 8;
   return 4;
 }
 
@@ -56,9 +55,10 @@ function getFreshnessDesc(latestReviewAt?: string | null): string {
   const ts = Date.parse(latestReviewAt);
   if (!Number.isFinite(ts)) return "최신 리뷰 작성일 정보 부족";
   const days = (Date.now() - ts) / (24 * 60 * 60 * 1000);
-  if (days <= 1) return "최신 리뷰가 매우 최근에 작성됨";
   if (days <= 7) return "최신 리뷰가 최근 1주 내 작성됨";
+  if (days <= 14) return "최신 리뷰가 최근 2주 내 작성됨";
   if (days <= 30) return "최신 리뷰가 최근 1개월 내 작성됨";
+  if (days <= 60) return "최신 리뷰가 최근 2개월 내 작성됨";
   return "최신 리뷰 작성 시점이 오래됨";
 }
 
