@@ -1118,9 +1118,11 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                       {storeDetail.store.address ? (
                         <button
                           type="button"
-                          onClick={() =>
-                            openNaverMap(storeDetail.store.name, storeDetail.store.address)
-                          }
+                          onClick={() => {
+                            const address = storeDetail.store.address;
+                            if (!address) return;
+                            openNaverMap(storeDetail.store.name, address);
+                          }}
                           style={{
                             border: "none",
                             background: "transparent",
