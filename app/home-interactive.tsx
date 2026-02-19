@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
@@ -820,6 +821,25 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
                     </div>
                     <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 8 }}>
                       {store.address ?? "주소 정보 없음"}
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <Link
+                        href={`/stores/${store.id}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (suppressCardClickRef.current) {
+                            event.preventDefault();
+                          }
+                        }}
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#28502E",
+                          textDecoration: "underline",
+                        }}
+                      >
+                        상세 페이지 보기
+                      </Link>
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
                       <span style={{ color: "#28502E" }}>

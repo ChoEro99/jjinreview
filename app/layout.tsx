@@ -5,6 +5,7 @@ import "./globals.css";
 import Providers from "./providers";
 import AuthButton from "@/components/AuthButton";
 import LoginPromptModal from "@/components/LoginPromptModal";
+import { getSiteUrl } from "@/src/lib/site-url";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,6 +22,7 @@ const adsenseClient = "ca-pub-6051453612452994";
 export const metadata: Metadata = {
   title: "리뷰랩",
   description: "이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 수치",
+  metadataBase: new URL(getSiteUrl()),
 };
 
 export default function RootLayout({
