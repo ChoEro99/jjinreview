@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import LegalPageActions from "@/components/LegalPageActions";
 
 export const metadata: Metadata = {
   title: "이용약관 | 리뷰랩",
@@ -8,6 +9,7 @@ export const metadata: Metadata = {
 export default function TermsPage() {
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-12 text-[#2d2d2d]">
+      <LegalPageActions />
       <h1 className="text-2xl font-bold">이용약관</h1>
       <p className="mt-4 leading-7">
         본 약관은 리뷰랩(이하 &quot;서비스&quot;)의 이용 조건 및 절차, 이용자와 서비스의 권리,

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import LegalPageActions from "@/components/LegalPageActions";
 
 export const metadata: Metadata = {
   title: "개인정보처리방침 | 리뷰랩",
@@ -8,6 +9,7 @@ export const metadata: Metadata = {
 export default function PrivacyPage() {
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-12 text-[#2d2d2d]">
+      <LegalPageActions />
       <h1 className="text-2xl font-bold">개인정보처리방침</h1>
       <p className="mt-4 leading-7">
         리뷰랩은 서비스 제공을 위해 필요한 범위 내에서 최소한의 개인정보를 수집 및 이용하며,
