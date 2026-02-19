@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Link from "next/link";
 import "./globals.css";
 import Providers from "./providers";
 import AuthButton from "@/components/AuthButton";
@@ -41,6 +42,21 @@ export default function RootLayout({
           <AuthButton />
           <LoginPromptModal />
           {children}
+          <footer className="mt-16 border-t border-[#c9b99e] bg-[#faf8f5] px-6 py-6 text-sm text-[#6f5c44]">
+            <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <a href="mailto:color0230@gmail.com" className="hover:underline">
+                문의: color0230@gmail.com
+              </a>
+              <div className="flex items-center gap-4">
+                <Link href="/terms" className="hover:underline">
+                  이용약관
+                </Link>
+                <Link href="/privacy" className="hover:underline">
+                  개인정보처리방침
+                </Link>
+              </div>
+            </div>
+          </footer>
         </Providers>
       </body>
     </html>
