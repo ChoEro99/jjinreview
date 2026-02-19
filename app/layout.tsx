@@ -42,7 +42,7 @@ export default function RootLayout({
           <AuthButton />
           <LoginPromptModal />
           {children}
-          <footer className="mt-16 border-t border-[#c9b99e] bg-[#faf8f5] px-6 py-6 text-sm text-[#6f5c44]">
+          <footer className="mt-16 border-t border-[#c9b99e] bg-[rgba(71,104,44,0.06)] px-6 py-6 text-sm text-[#6f5c44]">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <a href="mailto:color0230@gmail.com" className="hover:underline">
                 문의: color0230@gmail.com
