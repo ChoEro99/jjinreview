@@ -649,7 +649,7 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
     return 1 - (1 - adRisk) * (1 - undisclosedAdRisk);
   };
 
-  const HEADER_AND_SEARCH_HEIGHT = isMobile ? 212 : 280; // Height of header + search form + padding
+  const HEADER_AND_SEARCH_HEIGHT = isMobile ? 198 : 280; // Height of header + search form + padding
 
   return (
     <div style={{ minHeight: "100vh", background: "rgba(71, 104, 44, 0.08)", color: "#28502E" }}>
@@ -657,12 +657,12 @@ const HomeInteractive = ({ stores: initialStores }: HomeInteractiveProps) => {
         style={{
           background: "#28502E",
           color: "#ffffff",
-          padding: isMobile ? "22px 16px 14px" : "24px 20px",
+          padding: isMobile ? "14px 16px 10px" : "24px 20px",
           textAlign: "center",
         }}
       >
-        <h1 style={{ fontSize: isMobile ? 28 : 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>리뷰랩</h1>
-        <p style={{ marginTop: 8, fontSize: isMobile ? 13 : 16, opacity: 1, color: "#e8dfc9" }}>
+        <h1 style={{ fontSize: isMobile ? 26 : 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>리뷰랩</h1>
+        <p style={{ marginTop: 6, fontSize: isMobile ? 12 : 16, opacity: 1, color: "#e8dfc9" }}>
           이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 지수
         </p>
       </header>

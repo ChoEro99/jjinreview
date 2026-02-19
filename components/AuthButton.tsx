@@ -199,7 +199,7 @@ export default function AuthButton() {
       <div
         style={{
           position: "fixed",
-          top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 56px)" : 16,
+          top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 10px)" : 16,
           right: isMobile ? 10 : 16,
           zIndex: 1000,
           display: "flex",
@@ -475,7 +475,7 @@ export default function AuthButton() {
     <div
       style={{
         position: "fixed",
-        top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 56px)" : 16,
+        top: isMobile ? "calc(env(safe-area-inset-top, 0px) + 10px)" : 16,
         right: isMobile ? 10 : 16,
         zIndex: 1000,
       }}
