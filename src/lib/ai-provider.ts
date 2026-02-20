@@ -7,6 +7,8 @@ type ProviderInput = {
 };
 
 type ReviewSummaryInput = {
+  storeName: string;
+  storeAddress: string | null;
   reviews: Array<{
     rating: number;
     content: string;
@@ -266,14 +268,17 @@ export async function summarizeLatestReviewsWithGemini(
   if (!reviews.length) return null;
 
   const prompt = [
-    "다음 최신 리뷰 5개를 한국어로 요약하세요.",
+    "아래 가게 정보를 바탕으로 공개 리뷰 내용을 한국어로 요약하세요.",
+    `가게명: ${input.storeName}`,
+    `주소: ${input.storeAddress ?? "주소 정보 없음"}`,
     "출력 형식 규칙:",
-    "- 2~3개 불릿(각 줄 앞에 '• ' 사용)",
+    "- 최대 10줄",
+    "- 각 줄은 '- '로 시작",
     "- 광고 문구 금지",
     "- 과장 없이 리뷰 내용 기반으로만 작성",
-    "- 전체 220자 이내",
+    "- 없는 사실 만들지 말 것",
     "",
-    "리뷰 데이터:",
+    "참고 리뷰 데이터(최신 최대 5개):",
     JSON.stringify(reviews),
   ].join("\n");
 
@@ -310,7 +315,14 @@ export async function summarizeLatestReviewsWithGemini(
   const text = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
   if (!text) return null;
 
-  const normalized = text.length > 260 ? `${text.slice(0, 257)}...` : text;
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(0, 10);
+  const normalized = lines.join("\n");
+  if (!normalized) return null;
+
   return {
     text: normalized,
     provider: "gemini",

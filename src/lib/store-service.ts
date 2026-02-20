@@ -1460,8 +1460,9 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
           });
     const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
     const aiReviewSummary =
-      cachedSnapshot.aiReviewSummary ??
       (await summarizeLatestReviewsWithGemini({
+        storeName: cachedSnapshot.store.name,
+        storeAddress: cachedSnapshot.store.address,
         reviews: latestGoogleReviews.map((review) => ({
           rating: review.rating,
           content: review.content,
@@ -1469,6 +1470,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
           publishedAt: review.publishedAt,
         })),
       }))?.text ??
+      cachedSnapshot.aiReviewSummary ??
       null;
     const normalizedTrustScore = computeRatingTrustScore(
       cachedSnapshot.store.externalRating,
@@ -1560,6 +1562,8 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
   });
   const aiReviewSummary =
     (await summarizeLatestReviewsWithGemini({
+      storeName: normalizedStore.name,
+      storeAddress: normalizedStore.address,
       reviews: latestGoogleReviews.map((review) => ({
         rating: review.rating,
         content: review.content,
