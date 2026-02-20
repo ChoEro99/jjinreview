@@ -1268,6 +1268,7 @@ type StoreDetailSnapshot = {
   store: StoreBase;
   summary: StoreSummary;
   aiReviewSummary: string | null;
+  aiAdSuspectPercent: number | null;
   insight: {
     reliabilityLabel: string;
     topPercent1km: number | null;
@@ -1463,17 +1464,23 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
       (await summarizeLatestReviewsWithGemini({
         storeName: cachedSnapshot.store.name,
         storeAddress: cachedSnapshot.store.address,
-      }))?.text ??
+      })) ??
+      null;
+    const aiReviewSummaryText =
+      aiReviewSummary?.text ??
       cachedSnapshot.aiReviewSummary ??
       null;
+    const aiAdSuspectPercent =
+      aiReviewSummary?.adSuspectPercent ?? cachedSnapshot.aiAdSuspectPercent ?? null;
     const normalizedTrustScore = computeRatingTrustScore(
       cachedSnapshot.store.externalRating,
       cachedSnapshot.store.externalReviewCount ?? 0,
-      { latestReviewAt }
+      { latestReviewAt, adSuspectPercent: aiAdSuspectPercent }
     );
     return {
       ...cachedSnapshot,
-      aiReviewSummary,
+      aiReviewSummary: aiReviewSummaryText,
+      aiAdSuspectPercent,
       latestGoogleReviews,
       insight: {
         ...cachedSnapshot.insight,
@@ -1554,11 +1561,13 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     name: normalizedStore.name,
     address: normalizedStore.address,
   });
-  const aiReviewSummary =
+  const aiSummaryResult =
     (await summarizeLatestReviewsWithGemini({
       storeName: normalizedStore.name,
       storeAddress: normalizedStore.address,
-    }))?.text ?? null;
+    })) ?? null;
+  const aiReviewSummary = aiSummaryResult?.text ?? null;
+  const aiAdSuspectPercent = aiSummaryResult?.adSuspectPercent ?? null;
   const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
 
   const photosResult = await (async () => {
@@ -1612,7 +1621,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
   const ratingTrustScore = computeRatingTrustScore(
     normalizedStore.externalRating,
     normalizedStore.externalReviewCount ?? 0,
-    { latestReviewAt }
+    { latestReviewAt, adSuspectPercent: aiAdSuspectPercent }
   );
 
   // Create snapshot object (without reviews)
@@ -1620,6 +1629,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     store: normalizedStore,
     summary,
     aiReviewSummary,
+    aiAdSuspectPercent,
     insight: {
       reliabilityLabel,
       topPercent1km: rankInsight?.topPercent ?? null,

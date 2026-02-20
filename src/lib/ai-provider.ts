@@ -24,6 +24,7 @@ export type ProviderResult = {
 
 export type ReviewSummaryResult = {
   text: string;
+  adSuspectPercent: number | null;
   provider: "gemini";
   model: string;
 };
@@ -261,6 +262,7 @@ export async function summarizeLatestReviewsWithGemini(
     "- 각 줄은 '- '로 시작",
     "- 첫 줄은 반드시 '- 최근 3개월 리뷰 상태: ...' 형식으로 작성",
     "- 첫 줄은 최근 3개월(약 90일) 내 확인 가능한 리뷰의 전체 분위기/변화/활동성을 요약",
+    "- 둘째 줄은 반드시 '- 광고의심 비율: NN%' 형식으로 작성 (NN은 0~100 정수)",
     "- 광고 문구 금지",
     "- 과장 없이 리뷰 내용 기반으로만 작성",
     "- 없는 사실 만들지 말 것",
@@ -316,11 +318,20 @@ export async function summarizeLatestReviewsWithGemini(
     lines.unshift("- 최근 3개월 리뷰 상태: 웹 검색으로 확인 가능한 최신 리뷰 정보가 충분하지 않습니다.");
   }
 
+  const adPercentMatch = text.match(/광고의심\s*비율\s*[:：]?\s*([0-9]{1,3})\s*%/);
+  const adSuspectPercent = (() => {
+    if (!adPercentMatch) return null;
+    const parsed = Number(adPercentMatch[1]);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, Math.min(100, Math.round(parsed)));
+  })();
+
   const normalized = lines.slice(0, 10).join("\n");
   if (!normalized) return null;
 
   return {
     text: normalized,
+    adSuspectPercent,
     provider: "gemini",
     model,
   };

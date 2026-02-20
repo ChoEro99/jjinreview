@@ -45,6 +45,7 @@ interface StoreDetail {
     address: string | null;
   };
   aiReviewSummary?: string | null;
+  aiAdSuspectPercent?: number | null;
   summary: {
     adSuspectRatio: number;
     trustScore: number;
@@ -73,12 +74,15 @@ interface StoreDetail {
         sampleSize: number;
         stability: number;
         freshness: number;
+        adSuspicion: number;
         sampleSizeEmoji: string;
         stabilityEmoji: string;
         freshnessEmoji: string;
+        adSuspicionEmoji: string;
         sampleSizeDesc: string;
         stabilityDesc: string;
         freshnessDesc: string;
+        adSuspicionDesc: string;
       };
       label: string;
       emoji: string;
@@ -1107,6 +1111,9 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                               <div style={{ lineHeight: 1.45 }}>
                                 {breakdown.freshnessDesc} (최신성 {breakdown.freshness}점 {breakdown.freshnessEmoji})
                               </div>
+                              <div style={{ lineHeight: 1.45 }}>
+                                {breakdown.adSuspicionDesc} (광고의심 {breakdown.adSuspicion}점 {breakdown.adSuspicionEmoji})
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1465,6 +1472,11 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                 >
                   {storeDetail.aiReviewSummary ?? "최신 리뷰 기반 AI 요약을 준비 중입니다."}
                 </div>
+                {typeof storeDetail.aiAdSuspectPercent === "number" && (
+                  <div style={{ marginTop: 8, fontSize: 13, color: "#8C7051", fontWeight: 700 }}>
+                    AI 광고의심 비율: {storeDetail.aiAdSuspectPercent}%
+                  </div>
+                )}
               </div>
 
               <div style={{ marginBottom: 24 }}>

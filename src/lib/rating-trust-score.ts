@@ -1,6 +1,6 @@
 /**
  * 평점 믿음 지수
- * 총점 = 표본 신뢰(50) + 평점 안정성(25) + 최신성(25)
+ * 총점 = 표본 신뢰(40) + 평점 안정성(20) + 최신성(20) + 광고의심(20)
  * 출처 일치도는 의도적으로 제외함.
  */
 
@@ -10,8 +10,8 @@ function clamp(value: number, min: number, max: number) {
 
 function computeSampleSizeScore(reviewCount: number): number {
   if (reviewCount <= 0) return 0;
-  const raw = (Math.log10(reviewCount + 1) / Math.log10(501)) * 50;
-  return clamp(raw, 0, 50);
+  const raw = (Math.log10(reviewCount + 1) / Math.log10(501)) * 40;
+  return clamp(raw, 0, 40);
 }
 
 function getSampleSizeDesc(reviewCount: number): string {
@@ -24,11 +24,11 @@ function getSampleSizeDesc(reviewCount: number): string {
 }
 
 function computeStabilityScore(rating: number | null, reviewCount: number): number {
-  if (rating === null || reviewCount <= 0) return 6;
+  if (rating === null || reviewCount <= 0) return 5;
   const highRating = clamp((rating - 4.2) / 0.8, 0, 1);
   const lowSamplePenalty = clamp((40 - reviewCount) / 40, 0, 1);
-  const extremePenalty = highRating * lowSamplePenalty * 19;
-  return clamp(25 - extremePenalty, 4, 25);
+  const extremePenalty = highRating * lowSamplePenalty * 15;
+  return clamp(20 - extremePenalty, 3, 20);
 }
 
 function getStabilityDesc(rating: number | null, reviewCount: number): string {
@@ -39,15 +39,15 @@ function getStabilityDesc(rating: number | null, reviewCount: number): string {
 }
 
 function computeFreshnessScore(latestReviewAt?: string | null): number {
-  if (!latestReviewAt) return 10;
+  if (!latestReviewAt) return 8;
   const ts = Date.parse(latestReviewAt);
-  if (!Number.isFinite(ts)) return 10;
+  if (!Number.isFinite(ts)) return 8;
   const days = (Date.now() - ts) / (24 * 60 * 60 * 1000);
-  if (days <= 7) return 25;
-  if (days <= 14) return 18;
-  if (days <= 30) return 12;
-  if (days <= 60) return 8;
-  return 4;
+  if (days <= 7) return 20;
+  if (days <= 14) return 15;
+  if (days <= 30) return 11;
+  if (days <= 60) return 7;
+  return 3;
 }
 
 function getFreshnessDesc(latestReviewAt?: string | null): string {
@@ -60,6 +60,22 @@ function getFreshnessDesc(latestReviewAt?: string | null): string {
   if (days <= 30) return "최신 리뷰가 최근 1개월 내 작성됨";
   if (days <= 60) return "최신 리뷰가 최근 2개월 내 작성됨";
   return "최신 리뷰 작성 시점이 오래됨";
+}
+
+function computeAdSuspicionScore(adSuspectPercent?: number | null): number {
+  if (adSuspectPercent === null || adSuspectPercent === undefined) return 10;
+  const ratio = clamp(adSuspectPercent / 100, 0, 1);
+  return clamp(20 * (1 - ratio), 0, 20);
+}
+
+function getAdSuspicionDesc(adSuspectPercent?: number | null): string {
+  if (adSuspectPercent === null || adSuspectPercent === undefined) {
+    return "광고의심 비율 정보 부족";
+  }
+  if (adSuspectPercent <= 20) return "광고의심 비율이 낮은 편";
+  if (adSuspectPercent <= 40) return "광고의심 비율이 보통";
+  if (adSuspectPercent <= 60) return "광고의심 비율이 다소 높음";
+  return "광고의심 비율이 높은 편";
 }
 
 function getComponentEmoji(score: number, maxScore: number): string {
@@ -92,19 +108,26 @@ function getLabelAndEmoji(totalScore: number): { label: string; emoji: string } 
 export function computeRatingTrustScore(
   rating: number | null,
   reviewCount: number,
-  options?: { latestReviewAt?: string | null; lastSyncedAt?: string | null }
+  options?: {
+    latestReviewAt?: string | null;
+    lastSyncedAt?: string | null;
+    adSuspectPercent?: number | null;
+  }
 ): {
   totalScore: number;
   breakdown: {
     sampleSize: number;
     stability: number;
     freshness: number;
+    adSuspicion: number;
     sampleSizeEmoji: string;
     stabilityEmoji: string;
     freshnessEmoji: string;
+    adSuspicionEmoji: string;
     sampleSizeDesc: string;
     stabilityDesc: string;
     freshnessDesc: string;
+    adSuspicionDesc: string;
   };
   label: string;
   emoji: string;
@@ -113,7 +136,8 @@ export function computeRatingTrustScore(
   const stability = computeStabilityScore(rating, reviewCount);
   const freshnessRef = options?.latestReviewAt ?? options?.lastSyncedAt;
   const freshness = computeFreshnessScore(freshnessRef);
-  const totalScore = Math.round(sampleSize + stability + freshness);
+  const adSuspicion = computeAdSuspicionScore(options?.adSuspectPercent);
+  const totalScore = Math.round(sampleSize + stability + freshness + adSuspicion);
   const { label, emoji } = getLabelAndEmoji(totalScore);
 
   return {
@@ -122,12 +146,15 @@ export function computeRatingTrustScore(
       sampleSize: Math.round(sampleSize),
       stability: Math.round(stability),
       freshness: Math.round(freshness),
-      sampleSizeEmoji: getComponentEmoji(sampleSize, 50),
-      stabilityEmoji: getComponentEmoji(stability, 25),
-      freshnessEmoji: getComponentEmoji(freshness, 25),
+      adSuspicion: Math.round(adSuspicion),
+      sampleSizeEmoji: getComponentEmoji(sampleSize, 40),
+      stabilityEmoji: getComponentEmoji(stability, 20),
+      freshnessEmoji: getComponentEmoji(freshness, 20),
+      adSuspicionEmoji: getComponentEmoji(adSuspicion, 20),
       sampleSizeDesc: getSampleSizeDesc(reviewCount),
       stabilityDesc: getStabilityDesc(rating, reviewCount),
       freshnessDesc: getFreshnessDesc(freshnessRef),
+      adSuspicionDesc: getAdSuspicionDesc(options?.adSuspectPercent),
     },
     label,
     emoji,
