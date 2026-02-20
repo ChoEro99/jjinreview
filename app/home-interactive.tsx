@@ -484,37 +484,53 @@ const HomeInteractive = ({
       const normalize = (str: string) =>
         str.toLowerCase().trim().replace(/\s+/g, " ").replace(/[()\-_/.,]/g, "");
       
-      // Search for the store using its name (which should trigger auto-registration if not found)
-      const searchQuery = storeAddress ? `${storeName} ${storeAddress}` : storeName;
+      // Search-style lookup by store name first, then score candidates.
+      const searchQuery = storeName;
       const response = await fetch("/api/stores/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery, limit: 5 }),
+        body: JSON.stringify({ query: searchQuery, limit: 10 }),
       });
 
       if (response.ok) {
         const data = await response.json();
         if (data.ok && data.stores && data.stores.length > 0) {
-          // Find a strict match to avoid opening unrelated stores.
           const normalizedName = normalize(storeName);
           const normalizedAddress = storeAddress ? normalize(storeAddress) : null;
-          
-          const exactMatch = data.stores.find((s: StoreWithSummary) => {
-            const nameMatch = normalize(s.name) === normalizedName;
-            const addressMatch = normalizedAddress
-              ? (s.address ? normalize(s.address).includes(normalizedAddress) : false)
-              : true;
-            return nameMatch && addressMatch;
-          });
+          const scored = (data.stores as StoreWithSummary[])
+            .map((s) => {
+              const candidateName = normalize(s.name);
+              const candidateAddress = s.address ? normalize(s.address) : "";
+              let score = 0;
 
-          if (exactMatch) {
-            handleStoreClick(exactMatch.id);
+              if (candidateName === normalizedName) score += 100;
+              else if (candidateName.includes(normalizedName) || normalizedName.includes(candidateName)) score += 70;
+
+              if (normalizedAddress && candidateAddress) {
+                if (candidateAddress === normalizedAddress) score += 40;
+                else if (
+                  candidateAddress.includes(normalizedAddress) ||
+                  normalizedAddress.includes(candidateAddress)
+                ) {
+                  score += 25;
+                }
+              }
+
+              return { store: s, score };
+            })
+            .sort((a, b) => b.score - a.score);
+
+          const target = scored[0];
+          // Require a minimum confidence to avoid wrong random navigation.
+          if (target && target.score >= 70) {
+            handleStoreClick(target.store.id);
           } else {
-            // Do not fallback to first result: it causes random wrong navigation.
-            console.warn(
-              "No exact compared-store match found. Skip navigation.",
-              { storeId, storeName, storeAddress }
-            );
+            console.warn("Compared-store match score too low. Skip navigation.", {
+              storeId,
+              storeName,
+              storeAddress,
+              bestScore: target?.score ?? null,
+            });
           }
         } else {
           console.error("No stores found for comparison store:", storeName);
