@@ -1458,25 +1458,44 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
                   AI 리뷰 요약
                 </h3>
-                <div
-                  style={{
-                    border: "1px solid rgba(140, 112, 81, 0.3)",
-                    borderRadius: 12,
-                    padding: 14,
-                    color: "#28502E",
-                    background: "rgba(140, 112, 81, 0.06)",
-                    lineHeight: 1.5,
-                    fontSize: 14,
-                    whiteSpace: "pre-line",
-                  }}
-                >
-                  {storeDetail.aiReviewSummary ?? "최신 리뷰 기반 AI 요약을 준비 중입니다."}
-                </div>
-                {typeof storeDetail.aiAdSuspectPercent === "number" && (
-                  <div style={{ marginTop: 8, fontSize: 13, color: "#8C7051", fontWeight: 700 }}>
-                    AI 광고의심 비율: {storeDetail.aiAdSuspectPercent}%
-                  </div>
-                )}
+                {(() => {
+                  const lines = (storeDetail.aiReviewSummary ?? "최신 리뷰 기반 AI 요약을 준비 중입니다.")
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter((line) => line.length > 0);
+                  const [head, ...rest] = lines;
+                  return (
+                    <div
+                      style={{
+                        border: "1px solid rgba(140, 112, 81, 0.3)",
+                        borderRadius: 12,
+                        padding: 14,
+                        color: "#28502E",
+                        background: "rgba(140, 112, 81, 0.06)",
+                        lineHeight: 1.5,
+                        fontSize: 14,
+                      }}
+                    >
+                      {head && (
+                        <div
+                          style={{
+                            fontWeight: 800,
+                            fontSize: 15,
+                            background: "rgba(71, 104, 44, 0.14)",
+                            borderRadius: 8,
+                            padding: "6px 8px",
+                            marginBottom: rest.length > 0 ? 8 : 0,
+                          }}
+                        >
+                          {head}
+                        </div>
+                      )}
+                      {rest.length > 0 && (
+                        <div style={{ whiteSpace: "pre-line" }}>{rest.join("\n")}</div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div style={{ marginBottom: 24 }}>

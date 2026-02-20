@@ -1319,6 +1319,26 @@ type NearbyRecommendationRow = {
   compositeScore: number;
 };
 
+const AI_SUMMARY_TIMEOUT_MS = 1500;
+
+async function summarizeLatestReviewsNonBlocking(input: {
+  storeName: string;
+  storeAddress: string | null;
+}) {
+  try {
+    const timeout = new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), AI_SUMMARY_TIMEOUT_MS);
+    });
+    const result = await Promise.race([
+      summarizeLatestReviewsWithGemini(input),
+      timeout,
+    ]);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 async function deleteExpiredSnapshot(
   sb: ReturnType<typeof supabaseServer>,
   storeId: number,
@@ -1461,7 +1481,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
           });
     const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
     const aiReviewSummary =
-      (await summarizeLatestReviewsWithGemini({
+      (await summarizeLatestReviewsNonBlocking({
         storeName: cachedSnapshot.store.name,
         storeAddress: cachedSnapshot.store.address,
       })) ??
@@ -1562,7 +1582,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     address: normalizedStore.address,
   });
   const aiSummaryResult =
-    (await summarizeLatestReviewsWithGemini({
+    (await summarizeLatestReviewsNonBlocking({
       storeName: normalizedStore.name,
       storeAddress: normalizedStore.address,
     })) ?? null;
