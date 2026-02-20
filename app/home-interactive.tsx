@@ -509,9 +509,9 @@ const HomeInteractive = ({
       // Normalize function for better matching
       const normalize = (str: string) =>
         str.toLowerCase().trim().replace(/\s+/g, " ").replace(/[()\-_/.,]/g, "");
+      const normalizedName = normalize(storeName);
+      const normalizedAddress = storeAddress ? normalize(storeAddress) : null;
       const scoreCandidates = (candidates: StoreWithSummary[]) => {
-        const normalizedName = normalize(storeName);
-        const normalizedAddress = storeAddress ? normalize(storeAddress) : null;
         return candidates
           .map((s) => {
             const candidateName = normalize(s.name);
@@ -524,13 +524,15 @@ const HomeInteractive = ({
             ) {
               score += 70;
             }
-            if (normalizedAddress && candidateAddress) {
-              if (candidateAddress === normalizedAddress) score += 40;
+            if (normalizedAddress) {
+              if (candidateAddress === normalizedAddress) score += 120;
               else if (
                 candidateAddress.includes(normalizedAddress) ||
                 normalizedAddress.includes(candidateAddress)
               ) {
-                score += 25;
+                score += 95;
+              } else {
+                score -= 60;
               }
             }
             return { store: s, score };
@@ -551,16 +553,18 @@ const HomeInteractive = ({
         return scored[0] ?? null;
       };
 
-      // 1차: 이름 검색, 2차: 이름+주소 검색
-      const primary = await trySearch(storeName);
+      // 주소가 있으면 이름+주소를 우선 검색해 동명이점 오탐을 줄인다.
+      const firstQuery = storeAddress ? `${storeName} ${storeAddress}` : storeName;
+      const primary = await trySearch(firstQuery);
       const secondary =
-        primary && primary.score >= 55
+        primary && primary.score >= (normalizedAddress ? 90 : 55)
           ? null
-          : await trySearch(storeAddress ? `${storeName} ${storeAddress}` : storeName);
+          : await trySearch(storeAddress ? storeAddress : storeName);
       const target =
         secondary && (!primary || secondary.score > primary.score) ? secondary : primary;
 
-      if (target && target.score >= 50) {
+      const minScore = normalizedAddress ? 90 : 50;
+      if (target && target.score >= minScore) {
         handleStoreClick(target.store.id);
       } else {
         console.warn("Compared-store match score too low. Skip navigation.", {
