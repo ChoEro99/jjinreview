@@ -49,5 +49,11 @@ export default async function StorePage({ params }: RouteProps) {
   if (!storeId) notFound();
 
   const stores = await getCachedStoresWithSummary();
-  return <HomeInteractive stores={stores} initialStoreId={storeId} />;
+  return (
+    <HomeInteractive
+      stores={stores}
+      initialStoreId={storeId}
+      initialForceGoogle
+    />
+  );
 }

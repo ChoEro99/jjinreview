@@ -37,6 +37,7 @@ interface StoreWithSummary extends StoreBase {
 interface HomeInteractiveProps {
   stores: StoreWithSummary[];
   initialStoreId?: number | null;
+  initialForceGoogle?: boolean;
 }
 
 interface StoreDetail {
@@ -135,7 +136,11 @@ function isAbortLikeError(error: unknown) {
   );
 }
 
-const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeInteractiveProps) => {
+const HomeInteractive = ({
+  stores: initialStores,
+  initialStoreId = null,
+  initialForceGoogle = false,
+}: HomeInteractiveProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [stores, setStores] = useState<StoreWithSummary[]>(initialStores.slice(0, 10));
@@ -363,7 +368,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
 
   const handleStoreClick = useCallback(async (
     storeId: number,
-    options?: { syncUrl?: boolean; historyMode?: "push" | "replace" }
+    options?: { syncUrl?: boolean; historyMode?: "push" | "replace"; forceGoogle?: boolean }
   ) => {
     const shouldSyncUrl = options?.syncUrl ?? true;
     if (shouldSyncUrl) {
@@ -389,7 +394,10 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
       setStoreDetail(cached);
       setIsLoadingDetail(false);
       // 백그라운드에서 최신 데이터 갱신 (UI는 안 건드림)
-      fetch(`/api/stores/${storeId}`, { signal: controller.signal })
+      const bgUrl = options?.forceGoogle
+        ? `/api/stores/${storeId}?google=1`
+        : `/api/stores/${storeId}`;
+      fetch(bgUrl, { signal: controller.signal })
         .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (data?.ok && selectedStoreIdRef.current === storeId) {
@@ -411,7 +419,10 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
     setStoreDetail(null);
 
     try {
-      const response = await fetch(`/api/stores/${storeId}`, {
+      const detailUrl = options?.forceGoogle
+        ? `/api/stores/${storeId}?google=1`
+        : `/api/stores/${storeId}`;
+      const response = await fetch(detailUrl, {
         signal: controller.signal,
       });
 
@@ -547,7 +558,10 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
     if (hasAutoOpenedStoreFromQueryRef.current) return;
     if (typeof initialStoreId === "number" && Number.isFinite(initialStoreId) && initialStoreId > 0) {
       hasAutoOpenedStoreFromQueryRef.current = true;
-      void handleStoreClick(initialStoreId, { syncUrl: false });
+      void handleStoreClick(initialStoreId, {
+        syncUrl: false,
+        forceGoogle: initialForceGoogle,
+      });
       return;
     }
     const params = new URLSearchParams(window.location.search);
@@ -557,7 +571,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
     if (!Number.isFinite(storeId) || storeId <= 0) return;
     hasAutoOpenedStoreFromQueryRef.current = true;
     void handleStoreClick(storeId, { syncUrl: false });
-  }, [handleStoreClick, initialStoreId]);
+  }, [handleStoreClick, initialStoreId, initialForceGoogle]);
 
   useEffect(() => {
     const onPopState = () => {
