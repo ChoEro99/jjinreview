@@ -49,8 +49,5 @@ export default async function StorePage({ params }: RouteProps) {
   if (!storeId) notFound();
 
   const stores = await getCachedStoresWithSummary();
-  const exists = stores.some((store) => store.id === storeId);
-  if (!exists) notFound();
-
   return <HomeInteractive stores={stores} initialStoreId={storeId} />;
 }
