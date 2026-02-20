@@ -1463,12 +1463,6 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
       (await summarizeLatestReviewsWithGemini({
         storeName: cachedSnapshot.store.name,
         storeAddress: cachedSnapshot.store.address,
-        reviews: latestGoogleReviews.map((review) => ({
-          rating: review.rating,
-          content: review.content,
-          authorName: review.authorName,
-          publishedAt: review.publishedAt,
-        })),
       }))?.text ??
       cachedSnapshot.aiReviewSummary ??
       null;
@@ -1564,12 +1558,6 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     (await summarizeLatestReviewsWithGemini({
       storeName: normalizedStore.name,
       storeAddress: normalizedStore.address,
-      reviews: latestGoogleReviews.map((review) => ({
-        rating: review.rating,
-        content: review.content,
-        authorName: review.authorName,
-        publishedAt: review.publishedAt,
-      })),
     }))?.text ?? null;
   const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
 
