@@ -313,20 +313,22 @@ export async function summarizeLatestReviewsWithGemini(
     summary_lines?: unknown;
     ad_suspect_percent?: unknown;
   } | null = null;
+  let parsedFromJson = false;
   try {
     const jsonText = extractJsonObject(text) ?? text;
     parsed = JSON.parse(jsonText) as {
       summary_lines?: unknown;
       ad_suspect_percent?: unknown;
     };
+    parsedFromJson = true;
   } catch {
-    return null;
+    parsed = null;
   }
 
   const summaryLinesCandidate = parsed?.summary_lines;
-  const rawSummaryLines = Array.isArray(summaryLinesCandidate)
+  const rawSummaryLines = parsedFromJson && Array.isArray(summaryLinesCandidate)
     ? summaryLinesCandidate.filter((line): line is string => typeof line === "string")
-    : [];
+    : text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
 
   const lines = rawSummaryLines
     .map((line) => line.trim())
@@ -344,8 +346,14 @@ export async function summarizeLatestReviewsWithGemini(
 
   const adSuspectPercent = (() => {
     const raw = parsed?.ad_suspect_percent;
-    if (typeof raw !== "number" || !Number.isFinite(raw)) return null;
-    return Math.max(0, Math.min(100, Math.round(raw)));
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      return Math.max(0, Math.min(100, Math.round(raw)));
+    }
+    const adPercentMatch = text.match(/광고의심\s*비율\s*[:：]?\s*([0-9]{1,3})\s*%/);
+    if (!adPercentMatch) return null;
+    const parsedNum = Number(adPercentMatch[1]);
+    if (!Number.isFinite(parsedNum)) return null;
+    return Math.max(0, Math.min(100, Math.round(parsedNum)));
   })();
 
   const normalized = lines.slice(0, 10).join("\n");
