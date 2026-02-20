@@ -476,9 +476,8 @@ const HomeInteractive = ({
       }
     }
 
-    // Otherwise, it's a Google place ID - search/register to get the numeric ID
-    setIsLoadingDetail(true);
-    setStoreDetail(null);
+    // Otherwise, it's a Google place ID - search/register to get the numeric ID.
+    // Keep current detail visible until we find an exact target.
 
     try {
       // Normalize function for better matching
@@ -516,19 +515,15 @@ const HomeInteractive = ({
               "No exact compared-store match found. Skip navigation.",
               { storeId, storeName, storeAddress }
             );
-            setIsLoadingDetail(false);
           }
         } else {
           console.error("No stores found for comparison store:", storeName);
-          setIsLoadingDetail(false);
         }
       } else {
         console.error("Failed to search for comparison store:", response.status, response.statusText);
-        setIsLoadingDetail(false);
       }
     } catch (error) {
       console.error("Error handling comparison store click:", error);
-      setIsLoadingDetail(false);
     }
   };
 
