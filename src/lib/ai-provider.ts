@@ -260,14 +260,13 @@ export async function summarizeLatestReviewsWithGemini(
     "출력 형식 규칙:",
     "- 최대 10줄",
     "- 각 줄은 '- '로 시작",
-    "- 첫 줄은 반드시 '- 최근 3개월 리뷰 상태: ...' 형식으로 작성",
-    "- 첫 줄은 최근 3개월(약 90일) 내 확인 가능한 리뷰의 전체 분위기/변화/활동성을 요약",
-    "- 둘째 줄은 반드시 '- 광고의심 비율: NN%' 형식으로 작성 (NN은 0~100 정수)",
+    "- 첫 줄은 반드시 '- 최근 리뷰 상태: ...' 형식으로 작성",
+    "- 첫 줄은 확인 가능한 최신 리뷰의 전체 분위기/변화/활동성을 요약",
+    "- '광고의심 비율' 문구는 출력하지 말 것",
     "- 광고 문구 금지",
     "- 과장 없이 리뷰 내용 기반으로만 작성",
     "- 없는 사실 만들지 말 것",
     "- 검색으로 확인되지 않는 내용은 제외",
-    "- 정보가 부족하면 마지막 줄에 '- 웹 검색으로 확인된 리뷰 정보가 부족합니다.' 추가",
     "",
     "결과만 출력하고, 출처 링크/설명은 쓰지 마세요.",
   ].join("\n");
@@ -310,12 +309,15 @@ export async function summarizeLatestReviewsWithGemini(
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
+    .filter((line) => !/광고의심\s*비율/i.test(line))
+    .filter((line) => !/웹\s*검색으로\s*확인된\s*리뷰\s*정보가\s*부족/i.test(line))
+    .filter((line) => !/리뷰\s*정보가\s*부족/i.test(line))
     .slice(0, 10)
     .map((line) => (line.startsWith("- ") ? line : `- ${line}`));
 
-  const hasRecentLine = lines.some((line) => line.includes("최근 3개월 리뷰 상태"));
+  const hasRecentLine = lines.some((line) => line.includes("최근 리뷰 상태"));
   if (!hasRecentLine) {
-    lines.unshift("- 최근 3개월 리뷰 상태: 웹 검색으로 확인 가능한 최신 리뷰 정보가 충분하지 않습니다.");
+    lines.unshift("- 최근 리뷰 상태: 최근 리뷰 흐름을 확인 중입니다.");
   }
 
   const adPercentMatch = text.match(/광고의심\s*비율\s*[:：]?\s*([0-9]{1,3})\s*%/);
