@@ -753,7 +753,16 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
   const LIST_CONTAINER_HEIGHT = LIST_CARD_HEIGHT * LIST_VISIBLE_CARD_COUNT;
 
   return (
-    <div style={{ minHeight: "100vh", background: "rgba(71, 104, 44, 0.08)", color: "#28502E" }}>
+    <div
+      style={{
+        height: "100vh",
+        background: "rgba(71, 104, 44, 0.08)",
+        color: "#28502E",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
       <header
         style={{
           background: "#28502E",
@@ -770,21 +779,26 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
 
       <div
         style={{
+          flex: 1,
           display: isMobile ? "block" : "grid",
           gridTemplateColumns: isMobile ? "1fr" : showDetailPane ? "1fr 2fr" : "1fr",
           gap: 0,
           minWidth: 0,
+          minHeight: 0,
+          overflow: "hidden",
         }}
       >
         <aside
           style={{
             minWidth: 0,
+            height: "100%",
             background: "rgba(71, 104, 44, 0.06)",
             borderRight: isMobile ? "none" : "1px solid rgba(140, 112, 81, 0.3)",
             display: isMobile && showDetailPane ? "none" : "block",
+            overflow: "hidden",
           }}
         >
-          <div style={{ padding: isMobile ? 12 : 20 }}>
+          <div style={{ padding: isMobile ? 12 : 20, height: "100%", boxSizing: "border-box" }}>
             <form onSubmit={handleSearch} style={{ marginBottom: isMobile ? 12 : 20 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
                 <input
@@ -962,9 +976,11 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
           style={{
             padding: isMobile ? 14 : 24,
             display: showDetailPane ? "block" : "none",
+            height: "100%",
             minWidth: 0,
             maxWidth: "100%",
-            overflow: "auto",
+            overflowY: "auto",
+            overflowX: "hidden",
             background: "rgba(40, 80, 46, 0.05)",
           }}
         >
