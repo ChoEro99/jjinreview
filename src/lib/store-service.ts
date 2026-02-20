@@ -1408,15 +1408,17 @@ async function loadAiSummaryCache(storeId: number): Promise<AiSummaryCacheRow | 
     .from("ai_review_summaries")
     .select("store_id, summary_text, ad_suspect_percent, updated_at")
     .eq("store_id", storeId)
-    .single();
+    .order("updated_at", { ascending: false })
+    .limit(1);
 
   if (error) {
     if (isMissingTableError(error)) return null;
     throw new Error(error.message);
   }
-  if (!data) return null;
+  const rowRaw = Array.isArray(data) ? data[0] : data;
+  if (!rowRaw) return null;
 
-  const row = data as Record<string, unknown>;
+  const row = rowRaw as Record<string, unknown>;
   const updatedAt = typeof row.updated_at === "string" ? row.updated_at : null;
   const updatedTs = updatedAt ? Date.parse(updatedAt) : Number.NaN;
   const isStale =
@@ -1436,20 +1438,36 @@ async function saveAiSummaryCache(
   payload: { summaryText: string; adSuspectPercent: number | null }
 ) {
   const sb = supabaseServer();
-  const { error } = await sb
-    .from("ai_review_summaries")
-    .upsert(
-      {
-        store_id: storeId,
-        summary_text: payload.summaryText,
-        ad_suspect_percent: payload.adSuspectPercent,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "store_id" }
-    );
+  const nextRow = {
+    store_id: storeId,
+    summary_text: payload.summaryText,
+    ad_suspect_percent: payload.adSuspectPercent,
+    updated_at: new Date().toISOString(),
+  };
 
-  if (error && !isMissingTableError(error)) {
-    throw new Error(error.message);
+  const upsertResult = await sb
+    .from("ai_review_summaries")
+    .upsert(nextRow, { onConflict: "store_id" });
+
+  if (!upsertResult.error) return;
+  if (isMissingTableError(upsertResult.error)) return;
+
+  // Fallback for environments where unique constraint isn't applied yet.
+  const updateResult = await sb
+    .from("ai_review_summaries")
+    .update({
+      summary_text: payload.summaryText,
+      ad_suspect_percent: payload.adSuspectPercent,
+      updated_at: nextRow.updated_at,
+    })
+    .eq("store_id", storeId);
+
+  if (!updateResult.error) return;
+  if (isMissingTableError(updateResult.error)) return;
+
+  const insertResult = await sb.from("ai_review_summaries").insert(nextRow);
+  if (insertResult.error && !isMissingTableError(insertResult.error)) {
+    throw new Error(insertResult.error.message);
   }
 }
 
