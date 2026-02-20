@@ -175,6 +175,7 @@ const HomeInteractive = ({
   const [isSearching, setIsSearching] = useState(false);
   const [hoveredCardId, setHoveredCardId] = useState<number | null>(null);
   const [hoveredCompareId, setHoveredCompareId] = useState<number | string | null>(null);
+  const [navigatingComparedId, setNavigatingComparedId] = useState<number | string | null>(null);
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [failedPhotos, setFailedPhotos] = useState<Set<number>>(new Set());
@@ -486,9 +487,11 @@ const HomeInteractive = ({
   }, [syncStoreIdToUrl]);
 
   const handleComparedStoreClick = async (storeId: number | string, storeName: string, storeAddress: string | null) => {
+    setNavigatingComparedId(storeId);
     // If it's a number, it's already a registered store ID
     if (typeof storeId === "number") {
-      handleStoreClick(storeId);
+      await handleStoreClick(storeId);
+      setNavigatingComparedId(null);
       return;
     }
 
@@ -497,7 +500,8 @@ const HomeInteractive = ({
     if (typeof storeId === "string" && /^store-\d+$/.test(storeId)) {
       const numericId = Number(storeId.slice(STORE_PREFIX.length));
       if (Number.isFinite(numericId) && numericId > 0) {
-        handleStoreClick(numericId);
+        await handleStoreClick(numericId);
+        setNavigatingComparedId(null);
         return;
       }
     }
@@ -589,7 +593,7 @@ const HomeInteractive = ({
 
       const minScore = normalizedAddress ? 90 : 50;
       if (target && target.score >= minScore) {
-        handleStoreClick(target.store.id);
+        await handleStoreClick(target.store.id);
       } else {
         console.warn("Compared-store match score too low. Skip navigation.", {
           storeId,
@@ -600,6 +604,8 @@ const HomeInteractive = ({
       }
     } catch (error) {
       console.error("Error handling comparison store click:", error);
+    } finally {
+      setNavigatingComparedId((prev) => (prev === storeId ? null : prev));
     }
   };
 
@@ -1816,11 +1822,12 @@ const HomeInteractive = ({
                   <div style={{ border: "1px solid rgba(140, 112, 81, 0.4)", borderRadius: 12, background: "rgba(140, 112, 81, 0.06)", overflow: "hidden" }}>
                     {visibleComparedStores.map((comparedStore, idx, list) => {
                       const isHovered = hoveredCompareId === comparedStore.id;
+                      const isNavigating = navigatingComparedId === comparedStore.id;
                       return (
                         <div
                           key={comparedStore.id}
                           onClick={() => {
-                            if (!comparedStore.isSelf) {
+                            if (!comparedStore.isSelf && !isNavigating) {
                               handleComparedStoreClick(comparedStore.id, comparedStore.name, comparedStore.address);
                             }
                           }}
@@ -1830,15 +1837,21 @@ const HomeInteractive = ({
                             padding: "10px 14px",
                             borderBottom: idx === list.length - 1 ? "none" : "1px solid rgba(140, 112, 81, 0.4)",
                             background: comparedStore.isSelf ? "rgba(40, 80, 46, 0.18)" : isHovered ? "rgba(71, 104, 44, 0.15)" : "rgba(140, 112, 81, 0.06)",
-                            cursor: comparedStore.isSelf ? "default" : "pointer",
+                            cursor: comparedStore.isSelf || isNavigating ? "default" : "pointer",
                             transition: "all 0.2s ease",
                             fontSize: 14,
                             color: "#28502E",
+                            opacity: isNavigating ? 0.75 : 1,
                           }}
                         >
                           <span style={{ fontWeight: comparedStore.isSelf ? 700 : 400 }}>
                             {comparedStore.rank}위 {comparedStore.name}
                           </span>
+                          {isNavigating && (
+                            <span style={{ marginLeft: 8, fontSize: 12, color: "#8C7051", fontWeight: 700 }}>
+                              ⏳ 이동 중...
+                            </span>
+                          )}
                           {comparedStore.isSelf && (
                             <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 700, color: "#28502E" }}>
                               (현재 가게)
