@@ -177,6 +177,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
   const hasAutoOpenedStoreFromQueryRef = useRef(false);
   const nearbyCompareSectionRef = useRef<HTMLDivElement | null>(null);
   const aiSummaryFetchInFlightRef = useRef<Set<number>>(new Set());
+  const aiSummaryFetchAttemptedRef = useRef<Set<number>>(new Set());
   const [aiSummaryLoadingMap, setAiSummaryLoadingMap] = useState<Record<number, boolean>>({});
 
   const syncStoreIdToUrl = useCallback(
@@ -219,6 +220,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
 
   const handleCloseDetail = useCallback(
     (options?: { syncUrl?: boolean; historyMode?: "push" | "replace" }) => {
+      const closingStoreId = selectedStoreIdRef.current;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
@@ -232,6 +234,9 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
       const shouldSyncUrl = options?.syncUrl ?? true;
       if (shouldSyncUrl) {
         syncStoreIdToUrl(null, options?.historyMode ?? "push");
+      }
+      if (closingStoreId !== null) {
+        aiSummaryFetchAttemptedRef.current.delete(closingStoreId);
       }
     },
     [syncStoreIdToUrl]
@@ -595,7 +600,9 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
     if (!storeDetail || selectedStoreId === null) return;
     if (storeDetail.aiReviewSummary && storeDetail.aiReviewSummary.trim().length > 0) return;
     if (aiSummaryFetchInFlightRef.current.has(selectedStoreId)) return;
+    if (aiSummaryFetchAttemptedRef.current.has(selectedStoreId)) return;
 
+    aiSummaryFetchAttemptedRef.current.add(selectedStoreId);
     aiSummaryFetchInFlightRef.current.add(selectedStoreId);
     void (async () => {
       setAiSummaryLoadingMap((prev) => ({ ...prev, [selectedStoreId]: true }));
@@ -1132,6 +1139,9 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                               </div>
                               <div style={{ lineHeight: 1.45 }}>
                                 {breakdown.freshnessDesc} (최신성 {breakdown.freshness}점 {breakdown.freshnessEmoji})
+                              </div>
+                              <div style={{ lineHeight: 1.45 }}>
+                                {breakdown.adSuspicionDesc} (광고의심 {breakdown.adSuspicion}점 {breakdown.adSuspicionEmoji})
                               </div>
                             </div>
                           )}
