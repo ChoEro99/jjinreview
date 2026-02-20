@@ -176,7 +176,8 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
   const suppressCardClickRef = useRef(false);
   const hasAutoOpenedStoreFromQueryRef = useRef(false);
   const nearbyCompareSectionRef = useRef<HTMLDivElement | null>(null);
-  const aiSummaryFetchStartedRef = useRef<Set<number>>(new Set());
+  const aiSummaryFetchInFlightRef = useRef<Set<number>>(new Set());
+  const [aiSummaryLoadingMap, setAiSummaryLoadingMap] = useState<Record<number, boolean>>({});
 
   const syncStoreIdToUrl = useCallback(
     (storeId: number | null, historyMode: "push" | "replace" = "push") => {
@@ -593,10 +594,11 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
   useEffect(() => {
     if (!storeDetail || selectedStoreId === null) return;
     if (storeDetail.aiReviewSummary && storeDetail.aiReviewSummary.trim().length > 0) return;
-    if (aiSummaryFetchStartedRef.current.has(selectedStoreId)) return;
+    if (aiSummaryFetchInFlightRef.current.has(selectedStoreId)) return;
 
-    aiSummaryFetchStartedRef.current.add(selectedStoreId);
+    aiSummaryFetchInFlightRef.current.add(selectedStoreId);
     void (async () => {
+      setAiSummaryLoadingMap((prev) => ({ ...prev, [selectedStoreId]: true }));
       try {
         const response = await fetch(`/api/stores/${selectedStoreId}/ai-summary`);
         if (!response.ok) return;
@@ -617,6 +619,9 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
         }
       } catch {
         // Keep silent: summary fetch failure should not block detail UI.
+      } finally {
+        aiSummaryFetchInFlightRef.current.delete(selectedStoreId);
+        setAiSummaryLoadingMap((prev) => ({ ...prev, [selectedStoreId]: false }));
       }
     })();
   }, [selectedStoreId, storeDetail]);
@@ -1492,7 +1497,8 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                   AI 리뷰 요약
                 </h3>
                 {(() => {
-                  const isAiSummaryLoading = !storeDetail.aiReviewSummary;
+                  const isAiSummaryLoading =
+                    selectedStoreId !== null && aiSummaryLoadingMap[selectedStoreId] === true;
                   const lines = (storeDetail.aiReviewSummary ?? "")
                     .split(/\r?\n/)
                     .map((line) => line.trim())
@@ -1532,6 +1538,24 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                             AI가 리뷰를 요약하고 있어요.
                           </div>
                         </div>
+                      </div>
+                    );
+                  }
+
+                  if (!head) {
+                    return (
+                      <div
+                        style={{
+                          border: "1px solid rgba(140, 112, 81, 0.3)",
+                          borderRadius: 12,
+                          padding: 14,
+                          color: "#28502E",
+                          background: "rgba(140, 112, 81, 0.06)",
+                          fontSize: 14,
+                          fontWeight: 700,
+                        }}
+                      >
+                        AI 리뷰 요약을 아직 준비하지 못했어요.
                       </div>
                     );
                   }
