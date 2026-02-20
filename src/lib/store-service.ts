@@ -1328,6 +1328,12 @@ type AiSummaryCacheRow = {
   isStale: boolean;
 };
 
+function fallbackAdSuspectPercentFromSummary(summary?: { adSuspectRatio?: number } | null) {
+  const ratio = summary?.adSuspectRatio;
+  if (typeof ratio !== "number" || !Number.isFinite(ratio)) return null;
+  return Math.max(0, Math.min(100, Math.round(ratio * 100)));
+}
+
 async function deleteExpiredSnapshot(
   sb: ReturnType<typeof supabaseServer>,
   storeId: number,
@@ -1539,7 +1545,9 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
           });
     const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
     const aiReviewSummaryText = cachedSnapshot.aiReviewSummary ?? null;
-    const aiAdSuspectPercent = cachedSnapshot.aiAdSuspectPercent ?? null;
+    const aiAdSuspectPercent =
+      cachedSnapshot.aiAdSuspectPercent ??
+      fallbackAdSuspectPercentFromSummary(cachedSnapshot.summary);
     const normalizedTrustScore = computeRatingTrustScore(
       cachedSnapshot.store.externalRating,
       cachedSnapshot.store.externalReviewCount ?? 0,
@@ -1630,7 +1638,9 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     address: normalizedStore.address,
   });
   const aiReviewSummary = cachedSnapshot?.aiReviewSummary ?? null;
-  const aiAdSuspectPercent = cachedSnapshot?.aiAdSuspectPercent ?? null;
+  const aiAdSuspectPercent =
+    cachedSnapshot?.aiAdSuspectPercent ??
+    fallbackAdSuspectPercentFromSummary(cachedSnapshot?.summary);
   const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
 
   const photosResult = await (async () => {
@@ -1725,19 +1735,20 @@ export async function getStoreAiSummary(
 ) {
   const forceRefresh = options?.forceRefresh === true;
   const cachedSummary = await loadAiSummaryCache(id);
+  const cachedSnapshot = await getStoreDetailSnapshot(id);
   if (
     !forceRefresh &&
     cachedSummary &&
     !cachedSummary.isStale &&
     cachedSummary.summaryText
   ) {
+    const fallbackAd = fallbackAdSuspectPercentFromSummary(cachedSnapshot?.summary);
     return {
       aiReviewSummary: cachedSummary.summaryText,
-      aiAdSuspectPercent: cachedSummary.adSuspectPercent ?? null,
+      aiAdSuspectPercent: cachedSummary.adSuspectPercent ?? fallbackAd,
     };
   }
 
-  const cachedSnapshot = await getStoreDetailSnapshot(id);
   const storeName =
     cachedSnapshot?.store.name ??
     (await (async () => {
@@ -1758,11 +1769,14 @@ export async function getStoreAiSummary(
     })());
 
   if (!storeName) {
+    const fallbackAd = fallbackAdSuspectPercentFromSummary(cachedSnapshot?.summary);
     return {
       aiReviewSummary:
         cachedSummary?.summaryText ?? cachedSnapshot?.aiReviewSummary ?? null,
       aiAdSuspectPercent:
-        cachedSummary?.adSuspectPercent ?? cachedSnapshot?.aiAdSuspectPercent ?? null,
+        cachedSummary?.adSuspectPercent ??
+        cachedSnapshot?.aiAdSuspectPercent ??
+        fallbackAd,
     };
   }
 
@@ -1771,11 +1785,14 @@ export async function getStoreAiSummary(
     storeAddress,
   });
   if (!result) {
+    const fallbackAd = fallbackAdSuspectPercentFromSummary(cachedSnapshot?.summary);
     return {
       aiReviewSummary:
         cachedSummary?.summaryText ?? cachedSnapshot?.aiReviewSummary ?? null,
       aiAdSuspectPercent:
-        cachedSummary?.adSuspectPercent ?? cachedSnapshot?.aiAdSuspectPercent ?? null,
+        cachedSummary?.adSuspectPercent ??
+        cachedSnapshot?.aiAdSuspectPercent ??
+        fallbackAd,
     };
   }
 
