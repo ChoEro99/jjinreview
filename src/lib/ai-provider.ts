@@ -257,21 +257,18 @@ export async function summarizeLatestReviewsWithGemini(
     `가게명: ${input.storeName}`,
     `주소: ${input.storeAddress ?? "주소 정보 없음"}`,
     `기준일: ${new Date().toISOString().slice(0, 10)}`,
-    "아래 JSON 객체만 출력하세요:",
-    "{",
-    '  "summary_lines": ["최근 리뷰 상태: ...", "..."],',
-    '  "ad_suspect_percent": 0-100 사이 정수 또는 null',
-    "}",
-    "규칙:",
-    "- summary_lines는 최대 10줄",
-    "- 첫 줄은 반드시 '최근 리뷰 상태: ...' 형식",
-    "- summary_lines 안에 '광고의심 비율' 문구는 쓰지 말 것",
+    "출력 형식 규칙:",
+    "- 최대 10줄",
+    "- 각 줄은 '- '로 시작",
+    "- 첫 줄은 반드시 '- 최근 리뷰 상태: ...' 형식으로 작성",
+    "- 첫 줄은 확인 가능한 최신 리뷰의 전체 분위기/변화/활동성을 요약",
+    "- '광고의심 비율' 문구는 출력하지 말 것",
     "- 광고 문구 금지",
     "- 과장 없이 리뷰 내용 기반으로만 작성",
     "- 없는 사실 만들지 말 것",
     "- 검색으로 확인되지 않는 내용은 제외",
     "",
-    "JSON 외의 텍스트(설명/출처 링크/코드블록)는 쓰지 마세요.",
+    "결과만 출력하고, 출처 링크/설명은 쓰지 마세요.",
   ].join("\n");
 
   const response = await fetch(
@@ -289,7 +286,6 @@ export async function summarizeLatestReviewsWithGemini(
         ],
         tools: [{ google_search: {} }],
         generationConfig: {
-          responseMimeType: "application/json",
           temperature: 0.2,
           topP: 0.9,
         },
@@ -309,28 +305,8 @@ export async function summarizeLatestReviewsWithGemini(
   const text = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
   if (!text) return null;
 
-  let parsed: {
-    summary_lines?: unknown;
-    ad_suspect_percent?: unknown;
-  } | null = null;
-  let parsedFromJson = false;
-  try {
-    const jsonText = extractJsonObject(text) ?? text;
-    parsed = JSON.parse(jsonText) as {
-      summary_lines?: unknown;
-      ad_suspect_percent?: unknown;
-    };
-    parsedFromJson = true;
-  } catch {
-    parsed = null;
-  }
-
-  const summaryLinesCandidate = parsed?.summary_lines;
-  const rawSummaryLines = parsedFromJson && Array.isArray(summaryLinesCandidate)
-    ? summaryLinesCandidate.filter((line): line is string => typeof line === "string")
-    : text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
-
-  const lines = rawSummaryLines
+  const lines = text
+    .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .filter((line) => !/광고의심\s*비율/i.test(line))
@@ -345,10 +321,6 @@ export async function summarizeLatestReviewsWithGemini(
   }
 
   const adSuspectPercent = (() => {
-    const raw = parsed?.ad_suspect_percent;
-    if (typeof raw === "number" && Number.isFinite(raw)) {
-      return Math.max(0, Math.min(100, Math.round(raw)));
-    }
     const adPercentMatch = text.match(/광고의심\s*비율\s*[:：]?\s*([0-9]{1,3})\s*%/);
     if (!adPercentMatch) return null;
     const parsedNum = Number(adPercentMatch[1]);
