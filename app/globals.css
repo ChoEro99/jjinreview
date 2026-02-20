@@ -24,6 +24,14 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+html,
+body {
+  min-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  background: var(--background);
+}
+
 /* Hover utility classes */
 .hover-card {
   transition: all 0.2s ease;
