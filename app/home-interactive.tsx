@@ -203,7 +203,6 @@ const HomeInteractive = ({
   });
   const suppressCardClickRef = useRef(false);
   const hasAutoOpenedStoreFromQueryRef = useRef(false);
-  const hasStartedRangePrefetchRef = useRef(false);
   const nearbyCompareSectionRef = useRef<HTMLDivElement | null>(null);
   const reviewFormSectionRef = useRef<HTMLDivElement | null>(null);
   const aiSummaryFetchInFlightRef = useRef<Set<number>>(new Set());
@@ -694,59 +693,6 @@ const HomeInteractive = ({
       window.removeEventListener("open-store-detail", onOpenStoreDetail as EventListener);
     };
   }, [handleStoreClick]);
-
-  useEffect(() => {
-    if (hasStartedRangePrefetchRef.current) return;
-    hasStartedRangePrefetchRef.current = true;
-
-    let cancelled = false;
-    const PREFETCH_START_ID = 10;
-    const PREFETCH_END_ID = 210;
-    const PREFETCH_CONCURRENCY = 2;
-    const PREFETCH_GAP_MS = 120;
-
-    const queue: number[] = [];
-    for (let id = PREFETCH_START_ID; id <= PREFETCH_END_ID; id += 1) {
-      if (!storeDetailCache.current.has(id)) {
-        queue.push(id);
-      }
-    }
-    if (queue.length === 0) return;
-
-    const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-
-    const worker = async () => {
-      while (!cancelled) {
-        const nextId = queue.shift();
-        if (typeof nextId !== "number") return;
-        if (storeDetailCache.current.has(nextId)) continue;
-
-        try {
-          const response = await fetch(`/api/stores/${nextId}`);
-          if (!response.ok) continue;
-          const data = await response.json();
-          if (!data?.ok) continue;
-
-          const previous = storeDetailCache.current.get(nextId) ?? null;
-          const merged = mergeDetailKeepingAi(previous, data as StoreDetail);
-          storeDetailCache.current.set(nextId, merged);
-        } catch {
-          // Silent: prefetch failures should not affect UI.
-        }
-
-        if (PREFETCH_GAP_MS > 0) {
-          await sleep(PREFETCH_GAP_MS);
-        }
-      }
-    };
-
-    const workers = Array.from({ length: PREFETCH_CONCURRENCY }, () => worker());
-    void Promise.all(workers);
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!storeDetail || selectedStoreId === null) return;
