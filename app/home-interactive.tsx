@@ -468,14 +468,11 @@ const HomeInteractive = ({
 
     // If it's a string, check if it's in the format "store-{id}"
     const STORE_PREFIX = "store-";
-    if (typeof storeId === "string" && storeId.startsWith(STORE_PREFIX)) {
-      const numericId = parseInt(storeId.substring(STORE_PREFIX.length), 10);
-      if (!isNaN(numericId)) {
+    if (typeof storeId === "string" && /^store-\d+$/.test(storeId)) {
+      const numericId = Number(storeId.slice(STORE_PREFIX.length));
+      if (Number.isFinite(numericId) && numericId > 0) {
         handleStoreClick(numericId);
         return;
-      } else {
-        // Malformed store- prefix, treat as Google place ID
-        console.warn("Malformed store ID format:", storeId, "- treating as Google place ID");
       }
     }
 
@@ -485,7 +482,8 @@ const HomeInteractive = ({
 
     try {
       // Normalize function for better matching
-      const normalize = (str: string) => str.toLowerCase().trim().replace(/\s+/g, " ");
+      const normalize = (str: string) =>
+        str.toLowerCase().trim().replace(/\s+/g, " ").replace(/[()\-_/.,]/g, "");
       
       // Search for the store using its name (which should trigger auto-registration if not found)
       const searchQuery = storeAddress ? `${storeName} ${storeAddress}` : storeName;
@@ -498,20 +496,28 @@ const HomeInteractive = ({
       if (response.ok) {
         const data = await response.json();
         if (data.ok && data.stores && data.stores.length > 0) {
-          // Find the best match - look for exact name and address match with normalization
+          // Find a strict match to avoid opening unrelated stores.
           const normalizedName = normalize(storeName);
           const normalizedAddress = storeAddress ? normalize(storeAddress) : null;
           
           const exactMatch = data.stores.find((s: StoreWithSummary) => {
             const nameMatch = normalize(s.name) === normalizedName;
-            const addressMatch = normalizedAddress 
-              ? (s.address ? normalize(s.address) === normalizedAddress : false)
+            const addressMatch = normalizedAddress
+              ? (s.address ? normalize(s.address).includes(normalizedAddress) : false)
               : true;
             return nameMatch && addressMatch;
           });
 
-          const targetStore = exactMatch || data.stores[0];
-          handleStoreClick(targetStore.id);
+          if (exactMatch) {
+            handleStoreClick(exactMatch.id);
+          } else {
+            // Do not fallback to first result: it causes random wrong navigation.
+            console.warn(
+              "No exact compared-store match found. Skip navigation.",
+              { storeId, storeName, storeAddress }
+            );
+            setIsLoadingDetail(false);
+          }
         } else {
           console.error("No stores found for comparison store:", storeName);
           setIsLoadingDetail(false);
