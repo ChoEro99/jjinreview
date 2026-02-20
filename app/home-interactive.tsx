@@ -1189,7 +1189,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                     })()}
 
                     {/* 주소 링크 */}
-                    <div style={{ fontSize: isMobile ? 12 : 13, color: "#8C7051", lineHeight: 1.4 }}>
+                    <div style={{ fontSize: isMobile ? 16 : 18, color: "#28502E", lineHeight: 1.4 }}>
                       {storeDetail.store.address ? (
                         <button
                           type="button"
@@ -1203,11 +1203,12 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                             background: "transparent",
                             padding: 0,
                             margin: 0,
-                            color: "#8C7051",
+                            color: "#28502E",
                             textDecoration: "none",
                             cursor: "pointer",
                             textAlign: "left",
-                            fontSize: isMobile ? 14 : 15,
+                            fontSize: isMobile ? 16 : 18,
+                            fontWeight: 700,
                             lineHeight: 1.4,
                           }}
                         >
@@ -1491,11 +1492,50 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                   AI 리뷰 요약
                 </h3>
                 {(() => {
-                  const lines = (storeDetail.aiReviewSummary ?? "최신 리뷰 기반 AI 요약을 준비 중입니다.")
+                  const isAiSummaryLoading = !storeDetail.aiReviewSummary;
+                  const lines = (storeDetail.aiReviewSummary ?? "")
                     .split(/\r?\n/)
                     .map((line) => line.trim())
                     .filter((line) => line.length > 0);
                   const [head, ...rest] = lines;
+
+                  if (isAiSummaryLoading) {
+                    return (
+                      <div
+                        style={{
+                          border: "1px solid rgba(140, 112, 81, 0.3)",
+                          borderRadius: 12,
+                          padding: 14,
+                          color: "#28502E",
+                          background: "rgba(140, 112, 81, 0.06)",
+                        }}
+                      >
+                        <style>{`
+                          @keyframes aiSummarySpin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                          }
+                        `}</style>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div
+                            style={{
+                              width: 18,
+                              height: 18,
+                              border: "2px solid rgba(40, 80, 46, 0.25)",
+                              borderTopColor: "#28502E",
+                              borderRadius: "50%",
+                              animation: "aiSummarySpin 0.9s linear infinite",
+                              flexShrink: 0,
+                            }}
+                          />
+                          <div style={{ fontSize: 14, fontWeight: 700 }}>
+                            AI 리뷰 요약을 분석하는 중...
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div
                       style={{
