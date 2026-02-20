@@ -262,7 +262,6 @@ export async function summarizeLatestReviewsWithGemini(
     "- 각 줄은 '- '로 시작",
     "- 첫 줄은 반드시 '- 최근 리뷰 상태: ...' 형식으로 작성",
     "- 첫 줄은 확인 가능한 최신 리뷰의 전체 분위기/변화/활동성을 요약",
-    "- '광고의심 비율' 문구는 출력하지 말 것",
     "- 광고 문구 금지",
     "- 과장 없이 리뷰 내용 기반으로만 작성",
     "- 없는 사실 만들지 말 것",
@@ -309,7 +308,6 @@ export async function summarizeLatestReviewsWithGemini(
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .filter((line) => !/광고의심\s*비율/i.test(line))
     .filter((line) => !/웹\s*검색으로\s*확인된\s*리뷰\s*정보가\s*부족/i.test(line))
     .filter((line) => !/리뷰\s*정보가\s*부족/i.test(line))
     .slice(0, 10)
