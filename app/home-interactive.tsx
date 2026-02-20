@@ -613,12 +613,44 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
         if (!data?.ok) return;
 
         const baseDetail = storeDetailCache.current.get(selectedStoreId) ?? storeDetail;
+        const aiAdSuspectPercent =
+          typeof data.aiAdSuspectPercent === "number" ? data.aiAdSuspectPercent : null;
+        const latestReviewAt = (() => {
+          const rows = baseDetail.latestGoogleReviews ?? [];
+          let latestTs = Number.NaN;
+          for (const review of rows) {
+            if (!review.publishedAt) continue;
+            const ts = Date.parse(review.publishedAt);
+            if (!Number.isFinite(ts)) continue;
+            if (!Number.isFinite(latestTs) || ts > latestTs) {
+              latestTs = ts;
+            }
+          }
+          return Number.isFinite(latestTs) ? new Date(latestTs).toISOString() : null;
+        })();
+        const refreshedTrustScore = computeRatingTrustScore(
+          baseDetail.insight?.rating ?? null,
+          Math.max(
+            baseDetail.insight?.reviewCount ?? 0,
+            baseDetail.summary.externalReviewCount ?? 0
+          ),
+          {
+            latestReviewAt,
+            lastSyncedAt: baseDetail.summary.lastAnalyzedAt ?? null,
+            adSuspectPercent: aiAdSuspectPercent,
+          }
+        );
         const nextDetail: StoreDetail = {
           ...baseDetail,
           aiReviewSummary:
             typeof data.aiReviewSummary === "string" ? data.aiReviewSummary : null,
-          aiAdSuspectPercent:
-            typeof data.aiAdSuspectPercent === "number" ? data.aiAdSuspectPercent : null,
+          aiAdSuspectPercent,
+          insight: baseDetail.insight
+            ? {
+                ...baseDetail.insight,
+                ratingTrustScore: refreshedTrustScore,
+              }
+            : baseDetail.insight,
         };
         storeDetailCache.current.set(selectedStoreId, nextDetail);
         if (selectedStoreIdRef.current === selectedStoreId) {
