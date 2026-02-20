@@ -2,26 +2,22 @@ import type { MetadataRoute } from "next";
 import { supabaseServer } from "@/src/lib/supabaseServer";
 import { getSiteUrl } from "@/src/lib/site-url";
 
-const SITEMAP_CHUNK_SIZE = 5000;
+const SITEMAP_MIN_STORE_ID = 1;
+const SITEMAP_MAX_STORE_ID = 210;
 
 function isMissingColumnError(error: { code?: string } | null | undefined) {
   return error?.code === "42703" || error?.code === "PGRST204";
 }
 
-async function getStoreCount() {
-  const sb = supabaseServer();
-  const { count, error } = await sb.from("stores").select("id", { count: "exact", head: true });
-  if (error) throw new Error(error.message);
-  return count ?? 0;
-}
-
-async function getStoreSitemapRows(offset: number, limit: number) {
+async function getStoreSitemapRows() {
   const sb = supabaseServer();
   const full = await sb
     .from("stores")
     .select("id, updated_at")
+    .gte("id", SITEMAP_MIN_STORE_ID)
+    .lte("id", SITEMAP_MAX_STORE_ID)
     .order("id", { ascending: true })
-    .range(offset, offset + limit - 1);
+    .limit(SITEMAP_MAX_STORE_ID - SITEMAP_MIN_STORE_ID + 1);
 
   if (!full.error) {
     return (full.data ?? []) as Array<{ id: number; updated_at: string | null }>;
@@ -34,8 +30,10 @@ async function getStoreSitemapRows(offset: number, limit: number) {
   const minimal = await sb
     .from("stores")
     .select("id")
+    .gte("id", SITEMAP_MIN_STORE_ID)
+    .lte("id", SITEMAP_MAX_STORE_ID)
     .order("id", { ascending: true })
-    .range(offset, offset + limit - 1);
+    .limit(SITEMAP_MAX_STORE_ID - SITEMAP_MIN_STORE_ID + 1);
   if (minimal.error) throw new Error(minimal.error.message);
 
   return ((minimal.data ?? []) as Array<{ id: number }>).map((row) => ({
@@ -45,9 +43,7 @@ async function getStoreSitemapRows(offset: number, limit: number) {
 }
 
 export async function generateSitemaps() {
-  const total = await getStoreCount();
-  const pages = Math.max(1, Math.ceil(total / SITEMAP_CHUNK_SIZE));
-  return Array.from({ length: pages }, (_, id) => ({ id }));
+  return [{ id: 0 }];
 }
 
 export default async function sitemap({
@@ -55,33 +51,30 @@ export default async function sitemap({
 }: {
   id: number;
 }): Promise<MetadataRoute.Sitemap> {
+  if (id !== 0) return [];
   const siteUrl = getSiteUrl();
-  const offset = id * SITEMAP_CHUNK_SIZE;
-  const rows = await getStoreSitemapRows(offset, SITEMAP_CHUNK_SIZE);
+  const rows = await getStoreSitemapRows();
 
-  const staticUrls: MetadataRoute.Sitemap =
-    id === 0
-      ? [
-          {
-            url: `${siteUrl}/`,
-            lastModified: new Date(),
-            changeFrequency: "daily",
-            priority: 1,
-          },
-          {
-            url: `${siteUrl}/privacy`,
-            lastModified: new Date(),
-            changeFrequency: "yearly",
-            priority: 0.3,
-          },
-          {
-            url: `${siteUrl}/terms`,
-            lastModified: new Date(),
-            changeFrequency: "yearly",
-            priority: 0.3,
-          },
-        ]
-      : [];
+  const staticUrls: MetadataRoute.Sitemap = [
+    {
+      url: `${siteUrl}/`,
+      lastModified: new Date(),
+      changeFrequency: "daily",
+      priority: 1,
+    },
+    {
+      url: `${siteUrl}/privacy`,
+      lastModified: new Date(),
+      changeFrequency: "yearly",
+      priority: 0.3,
+    },
+    {
+      url: `${siteUrl}/terms`,
+      lastModified: new Date(),
+      changeFrequency: "yearly",
+      priority: 0.3,
+    },
+  ];
 
   const storeUrls: MetadataRoute.Sitemap = rows.map((row) => ({
     url: `${siteUrl}/stores/${row.id}`,
