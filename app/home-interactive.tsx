@@ -1189,7 +1189,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                     })()}
 
                     {/* 주소 링크 */}
-                    <div style={{ fontSize: isMobile ? 16 : 18, color: "#28502E", lineHeight: 1.4 }}>
+                    <div style={{ fontSize: isMobile ? 15 : 16, color: "#28502E", lineHeight: 1.4 }}>
                       {storeDetail.store.address ? (
                         <button
                           type="button"
@@ -1207,7 +1207,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                             textDecoration: "none",
                             cursor: "pointer",
                             textAlign: "left",
-                            fontSize: isMobile ? 16 : 18,
+                            fontSize: isMobile ? 15 : 16,
                             fontWeight: 700,
                             lineHeight: 1.4,
                           }}
@@ -1529,7 +1529,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                             }}
                           />
                           <div style={{ fontSize: 14, fontWeight: 700 }}>
-                            AI 리뷰 요약을 분석하는 중...
+                            AI가 리뷰를 요약하고 있어요.
                           </div>
                         </div>
                       </div>
