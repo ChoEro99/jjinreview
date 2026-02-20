@@ -1263,6 +1263,7 @@ function sortByNearest(
 
 // Snapshot TTL in days
 const SNAPSHOT_TTL_DAYS = 7;
+const AI_SUMMARY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 type StoreDetailSnapshot = {
   store: StoreBase;
@@ -1317,6 +1318,14 @@ type NearbyRecommendationRow = {
   distanceKm: number;
   ratingTrustScore: ReturnType<typeof computeRatingTrustScore>;
   compositeScore: number;
+};
+
+type AiSummaryCacheRow = {
+  storeId: number;
+  summaryText: string | null;
+  adSuspectPercent: number | null;
+  updatedAt: string | null;
+  isStale: boolean;
 };
 
 async function deleteExpiredSnapshot(
@@ -1390,6 +1399,57 @@ async function saveStoreDetailSnapshot(storeId: number, snapshot: StoreDetailSna
   } catch (error) {
     // Don't throw - just log the error. Cache failure shouldn't break the app
     console.error("Error saving snapshot:", error);
+  }
+}
+
+async function loadAiSummaryCache(storeId: number): Promise<AiSummaryCacheRow | null> {
+  const sb = supabaseServer();
+  const { data, error } = await sb
+    .from("ai_review_summaries")
+    .select("store_id, summary_text, ad_suspect_percent, updated_at")
+    .eq("store_id", storeId)
+    .single();
+
+  if (error) {
+    if (isMissingTableError(error)) return null;
+    throw new Error(error.message);
+  }
+  if (!data) return null;
+
+  const row = data as Record<string, unknown>;
+  const updatedAt = typeof row.updated_at === "string" ? row.updated_at : null;
+  const updatedTs = updatedAt ? Date.parse(updatedAt) : Number.NaN;
+  const isStale =
+    !Number.isFinite(updatedTs) || Date.now() - updatedTs > AI_SUMMARY_TTL_MS;
+
+  return {
+    storeId: toNumber(row.store_id, 0) ?? 0,
+    summaryText: typeof row.summary_text === "string" ? row.summary_text : null,
+    adSuspectPercent: toNumber(row.ad_suspect_percent),
+    updatedAt,
+    isStale,
+  };
+}
+
+async function saveAiSummaryCache(
+  storeId: number,
+  payload: { summaryText: string; adSuspectPercent: number | null }
+) {
+  const sb = supabaseServer();
+  const { error } = await sb
+    .from("ai_review_summaries")
+    .upsert(
+      {
+        store_id: storeId,
+        summary_text: payload.summaryText,
+        ad_suspect_percent: payload.adSuspectPercent,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "store_id" }
+    );
+
+  if (error && !isMissingTableError(error)) {
+    throw new Error(error.message);
   }
 }
 
@@ -1646,14 +1706,20 @@ export async function getStoreAiSummary(
   options?: { forceRefresh?: boolean }
 ) {
   const forceRefresh = options?.forceRefresh === true;
-  const cachedSnapshot = await getStoreDetailSnapshot(id);
-  if (!forceRefresh && cachedSnapshot?.aiReviewSummary) {
+  const cachedSummary = await loadAiSummaryCache(id);
+  if (
+    !forceRefresh &&
+    cachedSummary &&
+    !cachedSummary.isStale &&
+    cachedSummary.summaryText
+  ) {
     return {
-      aiReviewSummary: cachedSnapshot.aiReviewSummary,
-      aiAdSuspectPercent: cachedSnapshot.aiAdSuspectPercent ?? null,
+      aiReviewSummary: cachedSummary.summaryText,
+      aiAdSuspectPercent: cachedSummary.adSuspectPercent ?? null,
     };
   }
 
+  const cachedSnapshot = await getStoreDetailSnapshot(id);
   const storeName =
     cachedSnapshot?.store.name ??
     (await (async () => {
@@ -1675,8 +1741,10 @@ export async function getStoreAiSummary(
 
   if (!storeName) {
     return {
-      aiReviewSummary: cachedSnapshot?.aiReviewSummary ?? null,
-      aiAdSuspectPercent: cachedSnapshot?.aiAdSuspectPercent ?? null,
+      aiReviewSummary:
+        cachedSummary?.summaryText ?? cachedSnapshot?.aiReviewSummary ?? null,
+      aiAdSuspectPercent:
+        cachedSummary?.adSuspectPercent ?? cachedSnapshot?.aiAdSuspectPercent ?? null,
     };
   }
 
@@ -1686,10 +1754,17 @@ export async function getStoreAiSummary(
   });
   if (!result) {
     return {
-      aiReviewSummary: cachedSnapshot?.aiReviewSummary ?? null,
-      aiAdSuspectPercent: cachedSnapshot?.aiAdSuspectPercent ?? null,
+      aiReviewSummary:
+        cachedSummary?.summaryText ?? cachedSnapshot?.aiReviewSummary ?? null,
+      aiAdSuspectPercent:
+        cachedSummary?.adSuspectPercent ?? cachedSnapshot?.aiAdSuspectPercent ?? null,
     };
   }
+
+  await saveAiSummaryCache(id, {
+    summaryText: result.text,
+    adSuspectPercent: result.adSuspectPercent,
+  });
 
   if (cachedSnapshot) {
     const nextSnapshot: StoreDetailSnapshot = {

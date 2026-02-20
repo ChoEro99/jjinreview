@@ -64,6 +64,13 @@ create table if not exists public.naver_signal_cache (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.ai_review_summaries (
+  store_id bigint primary key references public.stores(id) on delete cascade,
+  summary_text text,
+  ad_suspect_percent numeric(5, 2),
+  updated_at timestamptz not null default now()
+);
+
 alter table public.stores add column if not exists updated_at timestamptz not null default now();
 alter table public.stores add column if not exists latitude numeric(10, 7);
 alter table public.stores add column if not exists longitude numeric(10, 7);
@@ -85,6 +92,7 @@ create index if not exists idx_review_analyses_review_id_created_at on public.re
 create index if not exists idx_review_analyses_store_id_created_at on public.review_analyses(store_id, created_at desc);
 create index if not exists idx_google_review_cache_updated_at on public.google_review_cache(updated_at desc);
 create index if not exists idx_naver_signal_cache_updated_at on public.naver_signal_cache(updated_at desc);
+create index if not exists idx_ai_review_summaries_updated_at on public.ai_review_summaries(updated_at desc);
 create index if not exists idx_store_detail_snapshots_expires_at on public.store_detail_snapshots(expires_at desc);
 
 -- 유저 테이블 (NextAuth용)
