@@ -203,7 +203,6 @@ const HomeInteractive = ({
   });
   const suppressCardClickRef = useRef(false);
   const hasAutoOpenedStoreFromQueryRef = useRef(false);
-  const hasStartedAiSummaryRangePrefetchRef = useRef(false);
   const nearbyCompareSectionRef = useRef<HTMLDivElement | null>(null);
   const reviewFormSectionRef = useRef<HTMLDivElement | null>(null);
   const aiSummaryFetchInFlightRef = useRef<Set<number>>(new Set());
@@ -694,49 +693,6 @@ const HomeInteractive = ({
       window.removeEventListener("open-store-detail", onOpenStoreDetail as EventListener);
     };
   }, [handleStoreClick]);
-
-  useEffect(() => {
-    if (hasStartedAiSummaryRangePrefetchRef.current) return;
-    hasStartedAiSummaryRangePrefetchRef.current = true;
-
-    let cancelled = false;
-    const PREFETCH_START_ID = 1;
-    const PREFETCH_END_ID = 210;
-    const PREFETCH_CONCURRENCY = 2;
-    const PREFETCH_GAP_MS = 180;
-
-    const queue: number[] = [];
-    for (let id = PREFETCH_START_ID; id <= PREFETCH_END_ID; id += 1) {
-      queue.push(id);
-    }
-
-    const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-
-    const worker = async () => {
-      while (!cancelled) {
-        const nextId = queue.shift();
-        if (typeof nextId !== "number") return;
-
-        try {
-          const response = await fetch(`/api/stores/${nextId}/ai-summary`);
-          if (!response.ok) continue;
-        } catch {
-          // Silent: background prefetch failures should not affect UI.
-        }
-
-        if (PREFETCH_GAP_MS > 0) {
-          await sleep(PREFETCH_GAP_MS);
-        }
-      }
-    };
-
-    const workers = Array.from({ length: PREFETCH_CONCURRENCY }, () => worker());
-    void Promise.all(workers);
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!storeDetail || selectedStoreId === null) return;
