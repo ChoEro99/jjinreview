@@ -1133,9 +1133,6 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                               <div style={{ lineHeight: 1.45 }}>
                                 {breakdown.freshnessDesc} (최신성 {breakdown.freshness}점 {breakdown.freshnessEmoji})
                               </div>
-                              <div style={{ lineHeight: 1.45 }}>
-                                {breakdown.adSuspicionDesc} (광고의심 {breakdown.adSuspicion}점 {breakdown.adSuspicionEmoji})
-                              </div>
                             </div>
                           )}
                         </div>
