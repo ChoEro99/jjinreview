@@ -1041,7 +1041,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
             height: "100%",
             minWidth: 0,
             maxWidth: "100%",
-            overflowY: isMobile ? "auto" : "hidden",
+            overflowY: "auto",
             overflowX: "hidden",
             scrollbarWidth: "none",
             msOverflowStyle: "none",
@@ -1097,14 +1097,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
           )}
 
           {!isLoadingDetail && storeDetail && (
-            <div
-              style={{
-                height: isMobile ? "auto" : "100%",
-                minHeight: 0,
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
+            <div>
               {(() => {
                 const externalCount = Math.max(
                   storeDetail.insight?.reviewCount ?? 0,
@@ -1516,17 +1509,6 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                 광고 영역 (가게 상세 요약 하단) · 슬롯 ID 입력 후 활성화
               </div>
 
-              <div
-                className="hide-scrollbar"
-                style={{
-                  flex: isMobile ? "none" : 1,
-                  minHeight: 0,
-                  overflowY: isMobile ? "visible" : "auto",
-                  overflowX: "hidden",
-                  scrollbarWidth: "none",
-                  msOverflowStyle: "none",
-                }}
-              >
               <div style={{ marginBottom: 24 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
                   AI 리뷰 요약
@@ -1835,7 +1817,6 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                   리뷰 작성
                 </h3>
                 <UserReviewForm storeId={selectedStoreId!} />
-              </div>
               </div>
             </div>
           )}
