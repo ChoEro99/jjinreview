@@ -204,6 +204,7 @@ const HomeInteractive = ({
   const suppressCardClickRef = useRef(false);
   const hasAutoOpenedStoreFromQueryRef = useRef(false);
   const nearbyCompareSectionRef = useRef<HTMLDivElement | null>(null);
+  const reviewFormSectionRef = useRef<HTMLDivElement | null>(null);
   const aiSummaryFetchInFlightRef = useRef<Set<number>>(new Set());
   const aiSummaryFetchAttemptedRef = useRef<Set<number>>(new Set());
   const [aiSummaryLoadingMap, setAiSummaryLoadingMap] = useState<Record<number, boolean>>({});
@@ -935,6 +936,26 @@ const HomeInteractive = ({
   // Must closely match actual footer rendered height to avoid bottom white gap.
   const RESERVED_FOOTER_HEIGHT = isMobile ? 52 : 42;
 
+  const scrollToReviewForm = useCallback(() => {
+    reviewFormSectionRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, []);
+
+  const handleReviewWriteClick = useCallback(() => {
+    if (isReviewFormOpen) {
+      setIsReviewFormOpen(false);
+      return;
+    }
+    setIsReviewFormOpen(true);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        scrollToReviewForm();
+      });
+    });
+  }, [isReviewFormOpen, scrollToReviewForm]);
+
   return (
     <div
       style={{
@@ -1352,7 +1373,7 @@ const HomeInteractive = ({
                   >
                     <button
                       type="button"
-                      onClick={() => setIsReviewFormOpen((prev) => !prev)}
+                      onClick={handleReviewWriteClick}
                       style={{
                         width: "100%",
                         marginBottom: 10,
@@ -1919,7 +1940,10 @@ const HomeInteractive = ({
               </div>
 
               {/* 리뷰 작성 */}
-              <div style={{ marginBottom: isReviewFormOpen ? 24 : 0, display: isReviewFormOpen ? "block" : "none" }}>
+              <div
+                ref={reviewFormSectionRef}
+                style={{ marginBottom: isReviewFormOpen ? 24 : 0, display: isReviewFormOpen ? "block" : "none" }}
+              >
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
                   리뷰 작성
                 </h3>
