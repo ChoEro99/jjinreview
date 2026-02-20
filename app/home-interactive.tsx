@@ -749,7 +749,8 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
     return 1 - (1 - adRisk) * (1 - undisclosedAdRisk);
   };
 
-  const HEADER_AND_SEARCH_HEIGHT = isMobile ? 198 : 280; // Height of header + search form + padding
+  const LIST_VISIBLE_CARD_COUNT = 5;
+  const LIST_CONTAINER_HEIGHT = LIST_CARD_HEIGHT * LIST_VISIBLE_CARD_COUNT;
 
   return (
     <div style={{ minHeight: "100vh", background: "rgba(71, 104, 44, 0.08)", color: "#28502E" }}>
@@ -881,7 +882,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
               onMouseLeave={handleListMouseUpOrLeave}
               onScroll={handleListScroll}
               style={{
-                maxHeight: `calc(100vh - ${HEADER_AND_SEARCH_HEIGHT}px)`,
+                height: LIST_CONTAINER_HEIGHT,
                 overflowY: "auto",
                 scrollbarWidth: "none",
                 msOverflowStyle: "none",
@@ -938,6 +939,21 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
               {virtualizedStoreCards.bottomSpacer > 0 && (
                 <div aria-hidden style={{ height: virtualizedStoreCards.bottomSpacer }} />
               )}
+            </div>
+
+            <div
+              style={{
+                marginTop: 12,
+                border: "1px dashed rgba(140, 112, 81, 0.3)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                fontSize: 12,
+                color: "#8C7051",
+                background: "rgba(140, 112, 81, 0.06)",
+                textAlign: "center",
+              }}
+            >
+              광고 영역 (가게 목록 하단) · 슬롯 ID 입력 후 활성화
             </div>
           </div>
         </aside>
