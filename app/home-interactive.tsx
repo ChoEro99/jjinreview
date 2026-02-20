@@ -176,6 +176,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
   const suppressCardClickRef = useRef(false);
   const hasAutoOpenedStoreFromQueryRef = useRef(false);
   const nearbyCompareSectionRef = useRef<HTMLDivElement | null>(null);
+  const aiSummaryFetchStartedRef = useRef<Set<number>>(new Set());
 
   const syncStoreIdToUrl = useCallback(
     (storeId: number | null, historyMode: "push" | "replace" = "push") => {
@@ -588,6 +589,37 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
       window.removeEventListener("open-store-detail", onOpenStoreDetail as EventListener);
     };
   }, [handleStoreClick]);
+
+  useEffect(() => {
+    if (!storeDetail || selectedStoreId === null) return;
+    if (storeDetail.aiReviewSummary && storeDetail.aiReviewSummary.trim().length > 0) return;
+    if (aiSummaryFetchStartedRef.current.has(selectedStoreId)) return;
+
+    aiSummaryFetchStartedRef.current.add(selectedStoreId);
+    void (async () => {
+      try {
+        const response = await fetch(`/api/stores/${selectedStoreId}/ai-summary`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!data?.ok) return;
+
+        const baseDetail = storeDetailCache.current.get(selectedStoreId) ?? storeDetail;
+        const nextDetail: StoreDetail = {
+          ...baseDetail,
+          aiReviewSummary:
+            typeof data.aiReviewSummary === "string" ? data.aiReviewSummary : null,
+          aiAdSuspectPercent:
+            typeof data.aiAdSuspectPercent === "number" ? data.aiAdSuspectPercent : null,
+        };
+        storeDetailCache.current.set(selectedStoreId, nextDetail);
+        if (selectedStoreIdRef.current === selectedStoreId) {
+          setStoreDetail(nextDetail);
+        }
+      } catch {
+        // Keep silent: summary fetch failure should not block detail UI.
+      }
+    })();
+  }, [selectedStoreId, storeDetail]);
 
   const showDetailPane = selectedStoreId !== null;
   const LIST_CARD_HEIGHT = 126;

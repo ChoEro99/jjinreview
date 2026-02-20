@@ -1319,26 +1319,6 @@ type NearbyRecommendationRow = {
   compositeScore: number;
 };
 
-const AI_SUMMARY_TIMEOUT_MS = 1500;
-
-async function summarizeLatestReviewsNonBlocking(input: {
-  storeName: string;
-  storeAddress: string | null;
-}) {
-  try {
-    const timeout = new Promise<null>((resolve) => {
-      setTimeout(() => resolve(null), AI_SUMMARY_TIMEOUT_MS);
-    });
-    const result = await Promise.race([
-      summarizeLatestReviewsWithGemini(input),
-      timeout,
-    ]);
-    return result;
-  } catch {
-    return null;
-  }
-}
-
 async function deleteExpiredSnapshot(
   sb: ReturnType<typeof supabaseServer>,
   storeId: number,
@@ -1480,18 +1460,8 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
             fallback: cachedSnapshot.latestGoogleReviews,
           });
     const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
-    const aiReviewSummary =
-      (await summarizeLatestReviewsNonBlocking({
-        storeName: cachedSnapshot.store.name,
-        storeAddress: cachedSnapshot.store.address,
-      })) ??
-      null;
-    const aiReviewSummaryText =
-      aiReviewSummary?.text ??
-      cachedSnapshot.aiReviewSummary ??
-      null;
-    const aiAdSuspectPercent =
-      aiReviewSummary?.adSuspectPercent ?? cachedSnapshot.aiAdSuspectPercent ?? null;
+    const aiReviewSummaryText = cachedSnapshot.aiReviewSummary ?? null;
+    const aiAdSuspectPercent = cachedSnapshot.aiAdSuspectPercent ?? null;
     const normalizedTrustScore = computeRatingTrustScore(
       cachedSnapshot.store.externalRating,
       cachedSnapshot.store.externalReviewCount ?? 0,
@@ -1581,13 +1551,8 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     name: normalizedStore.name,
     address: normalizedStore.address,
   });
-  const aiSummaryResult =
-    (await summarizeLatestReviewsNonBlocking({
-      storeName: normalizedStore.name,
-      storeAddress: normalizedStore.address,
-    })) ?? null;
-  const aiReviewSummary = aiSummaryResult?.text ?? null;
-  const aiAdSuspectPercent = aiSummaryResult?.adSuspectPercent ?? null;
+  const aiReviewSummary = cachedSnapshot?.aiReviewSummary ?? null;
+  const aiAdSuspectPercent = cachedSnapshot?.aiAdSuspectPercent ?? null;
   const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
 
   const photosResult = await (async () => {
@@ -1673,6 +1638,71 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
   return {
     ...snapshot,
     reviews: reviewsWithAuthorStats, // Include fresh reviews in response
+  };
+}
+
+export async function getStoreAiSummary(
+  id: number,
+  options?: { forceRefresh?: boolean }
+) {
+  const forceRefresh = options?.forceRefresh === true;
+  const cachedSnapshot = await getStoreDetailSnapshot(id);
+  if (!forceRefresh && cachedSnapshot?.aiReviewSummary) {
+    return {
+      aiReviewSummary: cachedSnapshot.aiReviewSummary,
+      aiAdSuspectPercent: cachedSnapshot.aiAdSuspectPercent ?? null,
+    };
+  }
+
+  const storeName =
+    cachedSnapshot?.store.name ??
+    (await (async () => {
+      const sb = supabaseServer();
+      const { data } = await sb.from("stores").select("name").eq("id", id).single();
+      return typeof (data as { name?: unknown } | null)?.name === "string"
+        ? ((data as { name: string }).name as string)
+        : null;
+    })());
+  const storeAddress =
+    cachedSnapshot?.store.address ??
+    (await (async () => {
+      const sb = supabaseServer();
+      const { data } = await sb.from("stores").select("address").eq("id", id).single();
+      return typeof (data as { address?: unknown } | null)?.address === "string"
+        ? ((data as { address: string }).address as string)
+        : null;
+    })());
+
+  if (!storeName) {
+    return {
+      aiReviewSummary: cachedSnapshot?.aiReviewSummary ?? null,
+      aiAdSuspectPercent: cachedSnapshot?.aiAdSuspectPercent ?? null,
+    };
+  }
+
+  const result = await summarizeLatestReviewsWithGemini({
+    storeName,
+    storeAddress,
+  });
+  if (!result) {
+    return {
+      aiReviewSummary: cachedSnapshot?.aiReviewSummary ?? null,
+      aiAdSuspectPercent: cachedSnapshot?.aiAdSuspectPercent ?? null,
+    };
+  }
+
+  if (cachedSnapshot) {
+    const nextSnapshot: StoreDetailSnapshot = {
+      ...cachedSnapshot,
+      aiReviewSummary: result.text,
+      aiAdSuspectPercent: result.adSuspectPercent,
+    };
+    void saveStoreDetailSnapshot(id, nextSnapshot);
+  }
+
+  return {
+    aiReviewSummary: result.text,
+    aiAdSuspectPercent: result.adSuspectPercent,
   };
 }
 
