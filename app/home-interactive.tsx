@@ -506,6 +506,30 @@ const HomeInteractive = ({
     // Keep current detail visible until we find an exact target.
 
     try {
+      if (typeof storeId === "string") {
+        const resolvedResponse = await fetch("/api/stores/resolve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            placeId: storeId,
+            name: storeName,
+            address: storeAddress,
+          }),
+        });
+        if (resolvedResponse.ok) {
+          const resolvedData = await resolvedResponse.json();
+          if (
+            resolvedData?.ok &&
+            typeof resolvedData.storeId === "number" &&
+            Number.isFinite(resolvedData.storeId) &&
+            resolvedData.storeId > 0
+          ) {
+            handleStoreClick(resolvedData.storeId);
+            return;
+          }
+        }
+      }
+
       // Normalize function for better matching
       const normalize = (str: string) =>
         str.toLowerCase().trim().replace(/\s+/g, " ").replace(/[()\-_/.,]/g, "");
