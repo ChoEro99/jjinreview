@@ -9,12 +9,6 @@ type ProviderInput = {
 type ReviewSummaryInput = {
   storeName: string;
   storeAddress: string | null;
-  reviews: Array<{
-    rating: number;
-    content: string;
-    authorName?: string | null;
-    publishedAt?: string | null;
-  }>;
 };
 
 type ProviderMeta = {
@@ -255,31 +249,25 @@ export async function summarizeLatestReviewsWithGemini(
   if (!apiKey) return null;
 
   const model = process.env.GEMINI_REVIEW_SUMMARY_MODEL || "gemini-2.5-flash";
-  const reviews = input.reviews
-    .map((review) => ({
-      rating: review.rating,
-      content: review.content.trim(),
-      authorName: review.authorName ?? null,
-      publishedAt: review.publishedAt ?? null,
-    }))
-    .filter((review) => review.content.length > 0)
-    .slice(0, 5);
-
-  if (!reviews.length) return null;
 
   const prompt = [
-    "아래 가게 정보를 바탕으로 공개 리뷰 내용을 한국어로 요약하세요.",
+    "아래 가게 정보를 기준으로 웹 검색을 사용해 최신 공개 리뷰/평판을 찾아 한국어로 요약하세요.",
+    "반드시 웹 검색으로 확인한 정보만 사용하세요.",
     `가게명: ${input.storeName}`,
     `주소: ${input.storeAddress ?? "주소 정보 없음"}`,
+    `기준일: ${new Date().toISOString().slice(0, 10)}`,
     "출력 형식 규칙:",
     "- 최대 10줄",
     "- 각 줄은 '- '로 시작",
+    "- 첫 줄은 반드시 '- 최근 3개월 리뷰 상태: ...' 형식으로 작성",
+    "- 첫 줄은 최근 3개월(약 90일) 내 확인 가능한 리뷰의 전체 분위기/변화/활동성을 요약",
     "- 광고 문구 금지",
     "- 과장 없이 리뷰 내용 기반으로만 작성",
     "- 없는 사실 만들지 말 것",
+    "- 검색으로 확인되지 않는 내용은 제외",
+    "- 정보가 부족하면 마지막 줄에 '- 웹 검색으로 확인된 리뷰 정보가 부족합니다.' 추가",
     "",
-    "참고 리뷰 데이터(최신 최대 5개):",
-    JSON.stringify(reviews),
+    "결과만 출력하고, 출처 링크/설명은 쓰지 마세요.",
   ].join("\n");
 
   const response = await fetch(
@@ -295,6 +283,7 @@ export async function summarizeLatestReviewsWithGemini(
             parts: [{ text: prompt }],
           },
         ],
+        tools: [{ google_search: {} }],
         generationConfig: {
           temperature: 0.2,
           topP: 0.9,
@@ -319,8 +308,15 @@ export async function summarizeLatestReviewsWithGemini(
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .slice(0, 10);
-  const normalized = lines.join("\n");
+    .slice(0, 10)
+    .map((line) => (line.startsWith("- ") ? line : `- ${line}`));
+
+  const hasRecentLine = lines.some((line) => line.includes("최근 3개월 리뷰 상태"));
+  if (!hasRecentLine) {
+    lines.unshift("- 최근 3개월 리뷰 상태: 웹 검색으로 확인 가능한 최신 리뷰 정보가 충분하지 않습니다.");
+  }
+
+  const normalized = lines.slice(0, 10).join("\n");
   if (!normalized) return null;
 
   return {
