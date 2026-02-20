@@ -903,33 +903,11 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                 {locationErrorMessage}
               </div>
             )}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
-              {currentLocationLabel ? (
-                <div style={{ fontSize: 12, color: "#47682C", fontWeight: 700, flex: 1, minWidth: 0 }}>
-                  현재 위치: {currentLocationLabel}
-                </div>
-              ) : (
-                <div style={{ flex: 1 }} />
-              )}
-              <button
-                type="button"
-                onClick={handleLocateAndRecommend}
-                disabled={isLocating}
-                style={{
-                  padding: isMobile ? "8px 10px" : "9px 12px",
-                  background: isLocating ? "#ccc" : "#47682C",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: 8,
-                  fontSize: isMobile ? 12 : 13,
-                  fontWeight: 700,
-                  cursor: isLocating ? "not-allowed" : "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {isLocating ? "위치 확인 중..." : "다시 추천받기"}
-              </button>
-            </div>
+            {currentLocationLabel && (
+              <div style={{ fontSize: 12, color: "#47682C", fontWeight: 700, marginBottom: 8 }}>
+                현재 위치: {currentLocationLabel}
+              </div>
+            )}
 
             <div
               ref={storeListRef}
@@ -1024,7 +1002,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
             height: "100%",
             minWidth: 0,
             maxWidth: "100%",
-            overflowY: "auto",
+            overflowY: isMobile ? "auto" : "hidden",
             overflowX: "hidden",
             scrollbarWidth: "none",
             msOverflowStyle: "none",
@@ -1080,7 +1058,14 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
           )}
 
           {!isLoadingDetail && storeDetail && (
-            <div>
+            <div
+              style={{
+                height: isMobile ? "auto" : "100%",
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
               {(() => {
                 const externalCount = Math.max(
                   storeDetail.insight?.reviewCount ?? 0,
@@ -1492,6 +1477,17 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                 광고 영역 (가게 상세 요약 하단) · 슬롯 ID 입력 후 활성화
               </div>
 
+              <div
+                className="hide-scrollbar"
+                style={{
+                  flex: isMobile ? "none" : 1,
+                  minHeight: 0,
+                  overflowY: isMobile ? "visible" : "auto",
+                  overflowX: "hidden",
+                  scrollbarWidth: "none",
+                  msOverflowStyle: "none",
+                }}
+              >
               <div style={{ marginBottom: 24 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
                   AI 리뷰 요약
@@ -1800,6 +1796,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                   리뷰 작성
                 </h3>
                 <UserReviewForm storeId={selectedStoreId!} />
+              </div>
               </div>
             </div>
           )}
