@@ -483,60 +483,66 @@ const HomeInteractive = ({
       // Normalize function for better matching
       const normalize = (str: string) =>
         str.toLowerCase().trim().replace(/\s+/g, " ").replace(/[()\-_/.,]/g, "");
-      
-      // Search-style lookup by store name first, then score candidates.
-      const searchQuery = storeName;
-      const response = await fetch("/api/stores/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery, limit: 10 }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.ok && data.stores && data.stores.length > 0) {
-          const normalizedName = normalize(storeName);
-          const normalizedAddress = storeAddress ? normalize(storeAddress) : null;
-          const scored = (data.stores as StoreWithSummary[])
-            .map((s) => {
-              const candidateName = normalize(s.name);
-              const candidateAddress = s.address ? normalize(s.address) : "";
-              let score = 0;
-
-              if (candidateName === normalizedName) score += 100;
-              else if (candidateName.includes(normalizedName) || normalizedName.includes(candidateName)) score += 70;
-
-              if (normalizedAddress && candidateAddress) {
-                if (candidateAddress === normalizedAddress) score += 40;
-                else if (
-                  candidateAddress.includes(normalizedAddress) ||
-                  normalizedAddress.includes(candidateAddress)
-                ) {
-                  score += 25;
-                }
+      const scoreCandidates = (candidates: StoreWithSummary[]) => {
+        const normalizedName = normalize(storeName);
+        const normalizedAddress = storeAddress ? normalize(storeAddress) : null;
+        return candidates
+          .map((s) => {
+            const candidateName = normalize(s.name);
+            const candidateAddress = s.address ? normalize(s.address) : "";
+            let score = 0;
+            if (candidateName === normalizedName) score += 100;
+            else if (
+              candidateName.includes(normalizedName) ||
+              normalizedName.includes(candidateName)
+            ) {
+              score += 70;
+            }
+            if (normalizedAddress && candidateAddress) {
+              if (candidateAddress === normalizedAddress) score += 40;
+              else if (
+                candidateAddress.includes(normalizedAddress) ||
+                normalizedAddress.includes(candidateAddress)
+              ) {
+                score += 25;
               }
+            }
+            return { store: s, score };
+          })
+          .sort((a, b) => b.score - a.score);
+      };
 
-              return { store: s, score };
-            })
-            .sort((a, b) => b.score - a.score);
+      const trySearch = async (query: string) => {
+        const response = await fetch("/api/stores/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query, limit: 10 }),
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (!data?.ok || !Array.isArray(data.stores) || data.stores.length === 0) return null;
+        const scored = scoreCandidates(data.stores as StoreWithSummary[]);
+        return scored[0] ?? null;
+      };
 
-          const target = scored[0];
-          // Require a minimum confidence to avoid wrong random navigation.
-          if (target && target.score >= 70) {
-            handleStoreClick(target.store.id);
-          } else {
-            console.warn("Compared-store match score too low. Skip navigation.", {
-              storeId,
-              storeName,
-              storeAddress,
-              bestScore: target?.score ?? null,
-            });
-          }
-        } else {
-          console.error("No stores found for comparison store:", storeName);
-        }
+      // 1차: 이름 검색, 2차: 이름+주소 검색
+      const primary = await trySearch(storeName);
+      const secondary =
+        primary && primary.score >= 55
+          ? null
+          : await trySearch(storeAddress ? `${storeName} ${storeAddress}` : storeName);
+      const target =
+        secondary && (!primary || secondary.score > primary.score) ? secondary : primary;
+
+      if (target && target.score >= 50) {
+        handleStoreClick(target.store.id);
       } else {
-        console.error("Failed to search for comparison store:", response.status, response.statusText);
+        console.warn("Compared-store match score too low. Skip navigation.", {
+          storeId,
+          storeName,
+          storeAddress,
+          bestScore: target?.score ?? null,
+        });
       }
     } catch (error) {
       console.error("Error handling comparison store click:", error);
