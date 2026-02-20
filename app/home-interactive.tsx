@@ -932,7 +932,8 @@ const HomeInteractive = ({
   const LIST_VISIBLE_CARD_COUNT = 5;
   const LIST_CONTAINER_HEIGHT = LIST_CARD_HEIGHT * LIST_VISIBLE_CARD_COUNT;
 
-  const RESERVED_FOOTER_HEIGHT = isMobile ? 64 : 56;
+  // Must closely match actual footer rendered height to avoid bottom white gap.
+  const RESERVED_FOOTER_HEIGHT = isMobile ? 52 : 42;
 
   return (
     <div
