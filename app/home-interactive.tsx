@@ -136,6 +136,28 @@ function isAbortLikeError(error: unknown) {
   );
 }
 
+function mergeDetailKeepingAi(base: StoreDetail | null, incoming: StoreDetail): StoreDetail {
+  if (!base) return incoming;
+  const hasIncomingAiSummary =
+    typeof incoming.aiReviewSummary === "string" && incoming.aiReviewSummary.trim().length > 0;
+  const hasBaseAiSummary =
+    typeof base.aiReviewSummary === "string" && base.aiReviewSummary.trim().length > 0;
+  return {
+    ...incoming,
+    aiReviewSummary: hasIncomingAiSummary
+      ? incoming.aiReviewSummary
+      : hasBaseAiSummary
+        ? base.aiReviewSummary
+        : null,
+    aiAdSuspectPercent:
+      typeof incoming.aiAdSuspectPercent === "number"
+        ? incoming.aiAdSuspectPercent
+        : typeof base.aiAdSuspectPercent === "number"
+          ? base.aiAdSuspectPercent
+          : null,
+  };
+}
+
 const HomeInteractive = ({
   stores: initialStores,
   initialStoreId = null,
@@ -401,8 +423,10 @@ const HomeInteractive = ({
         .then(res => res.ok ? res.json() : null)
         .then(data => {
           if (data?.ok && selectedStoreIdRef.current === storeId) {
-            storeDetailCache.current.set(storeId, data);
-            setStoreDetail(data);
+            const prevDetail = storeDetailCache.current.get(storeId) ?? cached;
+            const merged = mergeDetailKeepingAi(prevDetail, data as StoreDetail);
+            storeDetailCache.current.set(storeId, merged);
+            setStoreDetail(merged);
           }
         })
         .catch((error) => {
@@ -431,9 +455,11 @@ const HomeInteractive = ({
       if (response.ok) {
         const data = await response.json();
         if (data.ok) {
-          storeDetailCache.current.set(storeId, data);
+          const prevDetail = storeDetailCache.current.get(storeId) ?? null;
+          const merged = mergeDetailKeepingAi(prevDetail, data as StoreDetail);
+          storeDetailCache.current.set(storeId, merged);
           if (selectedStoreIdRef.current === storeId) {
-            setStoreDetail(data);
+            setStoreDetail(merged);
           }
         } else {
           if (selectedStoreIdRef.current === storeId) {
@@ -680,7 +706,9 @@ const HomeInteractive = ({
         const nextDetail: StoreDetail = {
           ...baseDetail,
           aiReviewSummary:
-            typeof data.aiReviewSummary === "string" ? data.aiReviewSummary : null,
+            typeof data.aiReviewSummary === "string" && data.aiReviewSummary.trim().length > 0
+              ? data.aiReviewSummary
+              : baseDetail.aiReviewSummary ?? null,
           aiAdSuspectPercent,
           insight: baseDetail.insight
             ? {
