@@ -44,6 +44,7 @@ interface StoreDetail {
     name: string;
     address: string | null;
   };
+  aiReviewSummary?: string | null;
   summary: {
     adSuspectRatio: number;
     trustScore: number;
@@ -752,10 +753,12 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
   const LIST_VISIBLE_CARD_COUNT = 5;
   const LIST_CONTAINER_HEIGHT = LIST_CARD_HEIGHT * LIST_VISIBLE_CARD_COUNT;
 
+  const RESERVED_FOOTER_HEIGHT = isMobile ? 64 : 56;
+
   return (
     <div
       style={{
-        height: "100vh",
+        height: `calc(100dvh - ${RESERVED_FOOTER_HEIGHT}px)`,
         background: "rgba(71, 104, 44, 0.08)",
         color: "#28502E",
         display: "flex",
@@ -973,6 +976,7 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
         </aside>
 
         <section
+          className="hide-scrollbar"
           style={{
             padding: isMobile ? 14 : 24,
             display: showDetailPane ? "block" : "none",
@@ -981,6 +985,8 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
             maxWidth: "100%",
             overflowY: "auto",
             overflowX: "hidden",
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
             background: "rgba(40, 80, 46, 0.05)",
           }}
         >
@@ -1439,6 +1445,26 @@ const HomeInteractive = ({ stores: initialStores, initialStoreId = null }: HomeI
                 }}
               >
                 광고 영역 (가게 상세 요약 하단) · 슬롯 ID 입력 후 활성화
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
+                  AI 리뷰 요약
+                </h3>
+                <div
+                  style={{
+                    border: "1px solid rgba(140, 112, 81, 0.3)",
+                    borderRadius: 12,
+                    padding: 14,
+                    color: "#28502E",
+                    background: "rgba(140, 112, 81, 0.06)",
+                    lineHeight: 1.5,
+                    fontSize: 14,
+                    whiteSpace: "pre-line",
+                  }}
+                >
+                  {storeDetail.aiReviewSummary ?? "최신 리뷰 기반 AI 요약을 준비 중입니다."}
+                </div>
               </div>
 
               <div style={{ marginBottom: 24 }}>

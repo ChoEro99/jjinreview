@@ -6,6 +6,15 @@ type ProviderInput = {
   isDisclosedAd?: boolean;
 };
 
+type ReviewSummaryInput = {
+  reviews: Array<{
+    rating: number;
+    content: string;
+    authorName?: string | null;
+    publishedAt?: string | null;
+  }>;
+};
+
 type ProviderMeta = {
   provider: "gemini" | "openai" | "heuristic";
   model: string;
@@ -15,6 +24,12 @@ type ProviderMeta = {
 export type ProviderResult = {
   analysis: ReviewAnalysis;
   meta: ProviderMeta;
+};
+
+export type ReviewSummaryResult = {
+  text: string;
+  provider: "gemini";
+  model: string;
 };
 
 const ANALYSIS_VERSION = "v1";
@@ -228,5 +243,77 @@ export async function analyzeReviewWithProvider(input: ProviderInput): Promise<P
       model: "rule-based-v1",
       version: ANALYSIS_VERSION,
     },
+  };
+}
+
+export async function summarizeLatestReviewsWithGemini(
+  input: ReviewSummaryInput
+): Promise<ReviewSummaryResult | null> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const model = process.env.GEMINI_REVIEW_SUMMARY_MODEL || "gemini-2.5-flash";
+  const reviews = input.reviews
+    .map((review) => ({
+      rating: review.rating,
+      content: review.content.trim(),
+      authorName: review.authorName ?? null,
+      publishedAt: review.publishedAt ?? null,
+    }))
+    .filter((review) => review.content.length > 0)
+    .slice(0, 5);
+
+  if (!reviews.length) return null;
+
+  const prompt = [
+    "다음 최신 리뷰 5개를 한국어로 요약하세요.",
+    "출력 형식 규칙:",
+    "- 2~3개 불릿(각 줄 앞에 '• ' 사용)",
+    "- 광고 문구 금지",
+    "- 과장 없이 리뷰 내용 기반으로만 작성",
+    "- 전체 220자 이내",
+    "",
+    "리뷰 데이터:",
+    JSON.stringify(reviews),
+  ].join("\n");
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          topP: 0.9,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) return null;
+  const json = (await response.json()) as {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{ text?: string }>;
+      };
+    }>;
+  };
+
+  const text = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if (!text) return null;
+
+  const normalized = text.length > 260 ? `${text.slice(0, 257)}...` : text;
+  return {
+    text: normalized,
+    provider: "gemini",
+    model,
   };
 }

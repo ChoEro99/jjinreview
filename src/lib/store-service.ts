@@ -1,4 +1,4 @@
-import { analyzeReviewWithProvider } from "@/src/lib/ai-provider";
+import { analyzeReviewWithProvider, summarizeLatestReviewsWithGemini } from "@/src/lib/ai-provider";
 import {
   adAnyProbabilityFromAnalysis,
   heuristicAnalyzeReview,
@@ -1267,6 +1267,7 @@ const SNAPSHOT_TTL_DAYS = 7;
 type StoreDetailSnapshot = {
   store: StoreBase;
   summary: StoreSummary;
+  aiReviewSummary: string | null;
   insight: {
     reliabilityLabel: string;
     topPercent1km: number | null;
@@ -1458,6 +1459,17 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
             fallback: cachedSnapshot.latestGoogleReviews,
           });
     const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
+    const aiReviewSummary =
+      cachedSnapshot.aiReviewSummary ??
+      (await summarizeLatestReviewsWithGemini({
+        reviews: latestGoogleReviews.map((review) => ({
+          rating: review.rating,
+          content: review.content,
+          authorName: review.authorName,
+          publishedAt: review.publishedAt,
+        })),
+      }))?.text ??
+      null;
     const normalizedTrustScore = computeRatingTrustScore(
       cachedSnapshot.store.externalRating,
       cachedSnapshot.store.externalReviewCount ?? 0,
@@ -1465,6 +1477,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     );
     return {
       ...cachedSnapshot,
+      aiReviewSummary,
       latestGoogleReviews,
       insight: {
         ...cachedSnapshot.insight,
@@ -1545,6 +1558,15 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     name: normalizedStore.name,
     address: normalizedStore.address,
   });
+  const aiReviewSummary =
+    (await summarizeLatestReviewsWithGemini({
+      reviews: latestGoogleReviews.map((review) => ({
+        rating: review.rating,
+        content: review.content,
+        authorName: review.authorName,
+        publishedAt: review.publishedAt,
+      })),
+    }))?.text ?? null;
   const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
 
   const photosResult = await (async () => {
@@ -1605,6 +1627,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
   const snapshot: StoreDetailSnapshot = {
     store: normalizedStore,
     summary,
+    aiReviewSummary,
     insight: {
       reliabilityLabel,
       topPercent1km: rankInsight?.topPercent ?? null,
