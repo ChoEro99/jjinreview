@@ -1149,7 +1149,7 @@ const HomeInteractive = ({
                 textAlign: "center",
               }}
             >
-              광고 영역 (가게 목록 하단) · 슬롯 ID 입력 후 활성화
+              광고 영역 (가게 목록 하단)
             </div>
           </div>
         </aside>
@@ -1627,7 +1627,7 @@ const HomeInteractive = ({
                   marginBottom: 24,
                 }}
               >
-                광고 영역 (가게 상세 요약 하단) · 슬롯 ID 입력 후 활성화
+                광고 영역 (가게 상세 요약 하단)
               </div>
 
               <div style={{ marginBottom: 24 }}>
@@ -1936,7 +1936,7 @@ const HomeInteractive = ({
                   marginBottom: 24,
                 }}
               >
-                광고 영역 (리뷰 목록 상단) · 슬롯 ID 입력 후 활성화
+                광고 영역 (리뷰 목록 상단)
               </div>
 
               {/* 리뷰 작성 */}

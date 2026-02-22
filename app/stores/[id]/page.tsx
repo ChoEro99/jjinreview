@@ -36,10 +36,7 @@ export async function generateMetadata({ params }: RouteProps): Promise<Metadata
   return {
     title: `${target.name} | 리뷰랩`,
     description: `${target.name} 평점과 리뷰 분석 정보를 확인하세요.`,
-    alternates: {
-      canonical: `/stores/${storeId}`,
-    },
-    robots: { index: true, follow: true },
+    robots: { index: false, follow: false },
   };
 }
 
@@ -57,3 +54,4 @@ export default async function StorePage({ params }: RouteProps) {
     />
   );
 }
+
