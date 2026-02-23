@@ -1495,7 +1495,16 @@ const HomeInteractive = ({
                       boxShadow: isHovered ? "0 2px 8px rgba(140, 112, 81, 0.2)" : "none",
                     }}
                   >
-                    <div style={{ fontWeight: 700, fontSize: isMobile ? 15 : 16, marginBottom: 4, color: "#28502E" }}>
+                    <div
+                      style={{
+                        fontWeight: 800,
+                        fontSize: isMobile ? 21 : 24,
+                        lineHeight: 1.12,
+                        color: "#28502E",
+                        letterSpacing: "-0.01em",
+                        marginBottom: 4,
+                      }}
+                    >
                       {store.name}
                     </div>
                     <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 8 }}>
