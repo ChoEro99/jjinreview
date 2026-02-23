@@ -301,6 +301,7 @@ const HomeInteractive = ({
   const uiText = useMemo(() => {
     if (selectedLanguage === "en") {
       return {
+        appTitle: "Review Lab",
         language: "Language",
         subtitle: "Can this rating be trusted? AI trust score for reviews",
         searchPlaceholder: "Search restaurants (e.g. Korean food, samgyetang)",
@@ -340,6 +341,7 @@ const HomeInteractive = ({
     }
     if (selectedLanguage === "ja") {
       return {
+        appTitle: "レビューラボ",
         language: "言語",
         subtitle: "この評価は信頼できる？ AIが算出する評価信頼スコア",
         searchPlaceholder: "店舗検索（例: 韓国料理、参鶏湯）",
@@ -379,6 +381,7 @@ const HomeInteractive = ({
     }
     if (selectedLanguage === "zh-CN") {
       return {
+        appTitle: "评论实验室",
         language: "语言",
         subtitle: "这个评分可靠吗？AI 评分可信度指数",
         searchPlaceholder: "搜索店铺（例：韩餐、参鸡汤）",
@@ -417,6 +420,7 @@ const HomeInteractive = ({
       };
     }
     return {
+      appTitle: "리뷰랩",
       language: "언어",
       subtitle: "이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 지수",
       searchPlaceholder: "가게 검색 (예: 한식, 삼계탕)",
@@ -1279,15 +1283,29 @@ const HomeInteractive = ({
         style={{
           background: "#28502E",
           color: "#ffffff",
-          padding: isMobile ? "12px 16px 8px" : "24px 20px",
+          padding: isMobile ? "12px 16px 14px" : "24px 20px 20px",
           textAlign: "center",
+          position: "relative",
         }}
       >
-        <h1 style={{ fontSize: isMobile ? 26 : 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>리뷰랩</h1>
+        <h1 style={{ fontSize: isMobile ? 26 : 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>{uiText.appTitle}</h1>
         <p style={{ marginTop: 6, fontSize: isMobile ? 12 : 16, opacity: 1, color: "#e8dfc9" }}>
           {uiText.subtitle}
         </p>
-        <div style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 8 }}>
+        <div
+          style={{
+            position: "absolute",
+            top: isMobile ? 40 : 56,
+            right: isMobile ? 10 : 16,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            background: "rgba(40, 80, 46, 0.36)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            borderRadius: 10,
+            padding: "5px 8px",
+          }}
+        >
           <span style={{ fontSize: 12, color: "#e8dfc9", fontWeight: 700 }}>{uiText.language}</span>
           <select
             value={selectedLanguage}
@@ -1297,7 +1315,7 @@ const HomeInteractive = ({
               border: "1px solid rgba(255,255,255,0.35)",
               background: "rgba(255,255,255,0.12)",
               color: "#fff",
-              padding: "6px 10px",
+              padding: "5px 8px",
               fontSize: 12,
               fontWeight: 700,
             }}
