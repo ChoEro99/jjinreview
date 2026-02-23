@@ -309,6 +309,9 @@ const HomeInteractive = ({
         searching: "Searching...",
         search: "Search",
         loadingNearby: "Loading stores near your current location...",
+        locationPermissionError: "Location permission is off. Enable location permission in app settings.",
+        locationUnavailableError: "Location is unavailable on this device.",
+        locationFetchError: "Couldn't get your current location. Please try again later.",
         noAddress: "No address",
         foodType: "Cuisine",
         signatureDish: "Signature",
@@ -349,6 +352,9 @@ const HomeInteractive = ({
         searching: "検索中...",
         search: "検索",
         loadingNearby: "現在地付近の店舗を読み込み中...",
+        locationPermissionError: "位置情報の権限がオフです。アプリ設定で位置情報を許可してください。",
+        locationUnavailableError: "この端末では位置情報を使用できません。",
+        locationFetchError: "現在地を取得できませんでした。しばらくしてから再試行してください。",
         noAddress: "住所情報なし",
         foodType: "料理ジャンル",
         signatureDish: "代表メニュー",
@@ -389,6 +395,9 @@ const HomeInteractive = ({
         searching: "搜索中...",
         search: "搜索",
         loadingNearby: "正在加载你当前位置附近的店铺...",
+        locationPermissionError: "定位权限已关闭，请在应用设置中开启定位权限。",
+        locationUnavailableError: "此设备无法使用定位信息。",
+        locationFetchError: "无法获取当前位置，请稍后重试。",
         noAddress: "暂无地址信息",
         foodType: "菜系",
         signatureDish: "招牌菜",
@@ -428,6 +437,9 @@ const HomeInteractive = ({
       searching: "검색 중...",
       search: "검색",
       loadingNearby: "현재 위치 기준으로 가게 목록을 불러오는 중...",
+      locationPermissionError: "위치 권한이 꺼져 있어요. 앱 설정에서 위치 권한을 허용해 주세요.",
+      locationUnavailableError: "이 기기에서는 위치 정보를 사용할 수 없어요.",
+      locationFetchError: "현재 위치를 가져오지 못했어요. 잠시 후 다시 시도해 주세요.",
       noAddress: "주소 정보 없음",
       foodType: "음식 분류",
       signatureDish: "대표 메뉴",
@@ -1218,17 +1230,17 @@ const HomeInteractive = ({
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         if (message.includes("denied") || message.includes("permission")) {
-          setLocationErrorMessage("위치 권한이 꺼져 있어요. 앱 설정에서 위치 권한을 허용해 주세요.");
+          setLocationErrorMessage(uiText.locationPermissionError);
         } else if (message.includes("unavailable")) {
-          setLocationErrorMessage("이 기기에서는 위치 정보를 사용할 수 없어요.");
+          setLocationErrorMessage(uiText.locationUnavailableError);
         } else {
-          setLocationErrorMessage("현재 위치를 가져오지 못했어요. 잠시 후 다시 시도해 주세요.");
+          setLocationErrorMessage(uiText.locationFetchError);
         }
       } finally {
         setIsLocating(false);
       }
     })();
-  }, [searchQuery, selectedLanguage]);
+  }, [searchQuery, selectedLanguage, uiText.locationFetchError, uiText.locationPermissionError, uiText.locationUnavailableError]);
 
   useEffect(() => {
     if (hasAttemptedNearbyAutoLoadRef.current) return;
@@ -1283,7 +1295,7 @@ const HomeInteractive = ({
         style={{
           background: "#28502E",
           color: "#ffffff",
-          padding: isMobile ? "12px 16px 14px" : "24px 20px 20px",
+          padding: isMobile ? "58px 16px 14px" : "24px 20px 20px",
           textAlign: "center",
           position: "relative",
         }}
@@ -1295,8 +1307,8 @@ const HomeInteractive = ({
         <div
           style={{
             position: "absolute",
-            top: isMobile ? 40 : 56,
-            right: isMobile ? 10 : 16,
+            top: isMobile ? 10 : 12,
+            left: isMobile ? 10 : 16,
             display: "inline-flex",
             alignItems: "center",
             gap: 8,
@@ -1400,24 +1412,6 @@ const HomeInteractive = ({
                   {isSearching ? uiText.searching : uiText.search}
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={handleLocateAndRecommend}
-                disabled={isLocating}
-                style={{
-                  marginTop: 8,
-                  width: "100%",
-                  padding: isMobile ? "10px 12px" : "11px 14px",
-                  borderRadius: 8,
-                  border: "1px solid rgba(40, 80, 46, 0.5)",
-                  background: "rgba(40, 80, 46, 0.08)",
-                  color: "#28502E",
-                  fontWeight: 700,
-                  cursor: isLocating ? "not-allowed" : "pointer",
-                }}
-              >
-                {uiText.locateNearby}
-              </button>
             </form>
             {isLocating && (
               <div style={{ marginTop: -4, marginBottom: 8, fontSize: 12, color: "#8C7051" }}>
