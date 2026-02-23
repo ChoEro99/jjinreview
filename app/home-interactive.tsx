@@ -423,7 +423,7 @@ const HomeInteractive = ({
       appTitle: "리뷰랩",
       language: "언어",
       subtitle: "이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 지수",
-      searchPlaceholder: "가게 검색 (예: 한식, 삼계탕)",
+      searchPlaceholder: "가게 검색 (예: 가게이름, 주소, 한식, 삼계탕)",
       locateNearby: "내 근처 추천",
       searching: "검색 중...",
       search: "검색",
