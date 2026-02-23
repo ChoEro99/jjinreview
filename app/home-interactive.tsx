@@ -1669,16 +1669,16 @@ const HomeInteractive = ({
                           {detailReviewCount > 0 && (
                             <div style={{ fontSize: isMobile ? 12 : 13, color: "#8C7051", marginTop: 6 }}>
                               <div style={{ lineHeight: 1.45 }}>
-                                {localizeTrustDesc(breakdown.sampleSizeDesc, selectedLanguage)} (S {breakdown.sampleSize} {breakdown.sampleSizeEmoji})
+                                {localizeTrustDesc(breakdown.sampleSizeDesc, selectedLanguage)} ({breakdown.sampleSize}{selectedLanguage === "en" ? ` ${uiText.scoreUnit}` : uiText.scoreUnit} {breakdown.sampleSizeEmoji})
                               </div>
                               <div style={{ lineHeight: 1.45 }}>
-                                {localizeTrustDesc(breakdown.stabilityDesc, selectedLanguage)} (T {breakdown.stability} {breakdown.stabilityEmoji})
+                                {localizeTrustDesc(breakdown.stabilityDesc, selectedLanguage)} ({breakdown.stability}{selectedLanguage === "en" ? ` ${uiText.scoreUnit}` : uiText.scoreUnit} {breakdown.stabilityEmoji})
                               </div>
                               <div style={{ lineHeight: 1.45 }}>
-                                {localizeTrustDesc(breakdown.freshnessDesc, selectedLanguage)} (F {breakdown.freshness} {breakdown.freshnessEmoji})
+                                {localizeTrustDesc(breakdown.freshnessDesc, selectedLanguage)} ({breakdown.freshness}{selectedLanguage === "en" ? ` ${uiText.scoreUnit}` : uiText.scoreUnit} {breakdown.freshnessEmoji})
                               </div>
                               <div style={{ lineHeight: 1.45 }}>
-                                {localizeTrustDesc(breakdown.adSuspicionDesc, selectedLanguage)} (A {breakdown.adSuspicion} {breakdown.adSuspicionEmoji})
+                                {localizeTrustDesc(breakdown.adSuspicionDesc, selectedLanguage)} ({breakdown.adSuspicion}{selectedLanguage === "en" ? ` ${uiText.scoreUnit}` : uiText.scoreUnit} {breakdown.adSuspicionEmoji})
                               </div>
                             </div>
                           )}
