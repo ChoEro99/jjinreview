@@ -9,6 +9,7 @@ type ProviderInput = {
 type ReviewSummaryInput = {
   storeName: string;
   storeAddress: string | null;
+  outputLanguage?: "ko" | "en" | "ja" | "zh-CN";
 };
 
 type ProviderMeta = {
@@ -28,6 +29,56 @@ export type ReviewSummaryResult = {
   provider: "gemini";
   model: string;
 };
+
+export async function translateTextWithGemini(input: {
+  text: string;
+  targetLanguage: "ko" | "en" | "ja" | "zh-CN";
+}): Promise<string | null> {
+  const source = input.text.trim();
+  if (!source) return null;
+  if (input.targetLanguage === "ko") return source;
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+
+  const model = process.env.GEMINI_REVIEW_SUMMARY_MODEL || "gemini-2.5-flash";
+  const prompt = [
+    "다음 텍스트를 요청 언어로 번역하세요.",
+    "의미를 바꾸지 말고 줄 수를 유지하세요.",
+    "목록/퍼센트(%) 표기와 숫자는 보존하세요.",
+    "요청 언어:",
+    input.targetLanguage,
+    "원문:",
+    source,
+  ].join("\n");
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0,
+          topP: 0.9,
+        },
+      }),
+    }
+  );
+  if (!response.ok) return null;
+  const json = (await response.json()) as {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{ text?: string }>;
+      };
+    }>;
+  };
+  const translated = json.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  return translated && translated.length > 0 ? translated : null;
+}
 
 const ANALYSIS_VERSION = "v1";
 
@@ -251,8 +302,19 @@ export async function summarizeLatestReviewsWithGemini(
 
   const model = process.env.GEMINI_REVIEW_SUMMARY_MODEL || "gemini-2.5-flash";
 
+  const outputLanguage = input.outputLanguage ?? "ko";
+  const outputLanguageLabel =
+    outputLanguage === "ko"
+      ? "한국어"
+      : outputLanguage === "en"
+        ? "English"
+        : outputLanguage === "ja"
+          ? "日本語"
+          : "简体中文";
+
   const prompt = [
-    "아래 가게 정보를 기준으로 웹 검색을 사용해 최신 공개 리뷰/평판을 찾아 한국어로 요약하세요.",
+    "아래 가게 정보를 기준으로 웹 검색을 사용해 최신 공개 리뷰/평판을 찾으세요.",
+    "중요: 한국어 리뷰 또는 한국인 작성 리뷰만 근거로 판단하세요.",
     "반드시 웹 검색으로 확인한 정보만 사용하세요.",
     `가게명: ${input.storeName}`,
     `주소: ${input.storeAddress ?? "주소 정보 없음"}`,
@@ -263,6 +325,7 @@ export async function summarizeLatestReviewsWithGemini(
     "- 첫 줄은 반드시 '- 최근 리뷰 상태: ...' 형식으로 작성",
     "- 첫 줄은 확인 가능한 최신 리뷰의 전체 분위기/변화/활동성을 요약",
     "- 마지막 줄은 반드시 '- 광고의심 비율: NN%' 형식으로 작성",
+    `- 출력 언어는 반드시 ${outputLanguageLabel}`,
     "- 광고 문구 금지",
     "- 과장 없이 리뷰 내용 기반으로만 작성",
     "- 없는 사실 만들지 말 것",

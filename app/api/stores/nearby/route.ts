@@ -7,6 +7,7 @@ export async function POST(req: Request) {
       latitude?: number;
       longitude?: number;
       limit?: number;
+      keyword?: string;
     };
 
     const latitude = typeof body.latitude === "number" ? body.latitude : NaN;
@@ -20,7 +21,10 @@ export async function POST(req: Request) {
 
     const recommendations = await getNearbyRecommendedStoresByLocation(
       { latitude, longitude },
-      { limit: typeof body.limit === "number" ? body.limit : 10 }
+      {
+        limit: typeof body.limit === "number" ? body.limit : 10,
+        keyword: typeof body.keyword === "string" ? body.keyword : undefined,
+      }
     );
 
     return NextResponse.json({

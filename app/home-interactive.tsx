@@ -6,11 +6,21 @@ import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
 import UserReviewForm from "@/components/UserReviewForm";
+import {
+  type AppLanguage,
+  SUPPORTED_APP_LANGUAGES,
+  appLanguageNativeLabel,
+  appLanguageToLocale,
+  normalizeAppLanguage,
+} from "@/src/lib/language";
+import { useAppLanguageClient } from "@/src/lib/app-language-client";
 
 interface StoreBase {
   id: number;
   name: string;
   address: string | null;
+  cuisineType?: string | null;
+  signatureDish?: string | null;
   latitude: number | null;
   longitude: number | null;
   externalRating?: number | null;
@@ -44,6 +54,14 @@ interface StoreDetail {
   store: {
     name: string;
     address: string | null;
+    cuisineType?: string | null;
+    signatureDish?: string | null;
+  };
+  localizedStore?: {
+    localizedName: string;
+    localizedAddress: string | null;
+    koreanName: string;
+    koreanAddress: string | null;
   };
   aiReviewSummary?: string | null;
   aiAdSuspectPercent?: number | null;
@@ -158,11 +176,80 @@ function mergeDetailKeepingAi(base: StoreDetail | null, incoming: StoreDetail): 
   };
 }
 
+function shouldShowKoreanSupplement(localized: string | null, korean: string | null) {
+  if (!localized || !korean) return false;
+  const normalize = (value: string) => value.toLowerCase().replace(/\s+/g, "").trim();
+  return normalize(localized) !== normalize(korean);
+}
+
+function formatCountWithUnit(count: number, unit: string) {
+  if (!Number.isFinite(count)) return "-";
+  if (unit === "reviews") return `${count} ${unit}`;
+  return `${count}${unit}`;
+}
+
+function localizeTrustLabel(label: string, lang: AppLanguage) {
+  if (lang === "ko") return label;
+  const mapEn: Record<string, string> = {
+    "확실함": "Very Reliable",
+    "믿을 만함": "Reliable",
+    "참고용": "Use with Caution",
+    "의심됨": "Suspicious",
+    "믿기 어려움": "Low Reliability",
+  };
+  const mapJa: Record<string, string> = {
+    "확실함": "とても信頼できる",
+    "믿을 만함": "信頼できる",
+    "참고용": "参考レベル",
+    "의심됨": "注意が必要",
+    "믿기 어려움": "信頼しにくい",
+  };
+  const mapZh: Record<string, string> = {
+    "확실함": "非常可靠",
+    "믿을 만함": "较可靠",
+    "참고용": "仅供参考",
+    "의심됨": "存疑",
+    "믿기 어려움": "可信度低",
+  };
+  if (lang === "en") return mapEn[label] ?? label;
+  if (lang === "ja") return mapJa[label] ?? label;
+  return mapZh[label] ?? label;
+}
+
+function localizeTrustDesc(desc: string, lang: AppLanguage) {
+  if (lang === "ko") return desc;
+  const mapEn: Record<string, string> = {
+    "표본이 매우 충분함": "Excellent sample size",
+    "표본이 충분한 편": "Good sample size",
+    "표본이 보통": "Moderate sample size",
+    "표본이 작은 편": "Small sample size",
+    "표본이 매우 작음": "Very small sample size",
+    "리뷰 표본 없음": "No review samples",
+    "평점 안정성 판단 정보 부족": "Not enough data for stability",
+    "고평점 대비 표본이 작아 변동 가능성 있음": "High rating with low sample may fluctuate",
+    "고평점이나 표본이 아직 충분하지 않음": "High rating but sample is still limited",
+    "평점 패턴이 비교적 안정적": "Rating pattern is relatively stable",
+    "최신 리뷰 작성일 정보 부족": "Not enough freshness data",
+    "최신 리뷰가 최근 1주 내 작성됨": "Latest review is within 1 week",
+    "최신 리뷰가 최근 2주 내 작성됨": "Latest review is within 2 weeks",
+    "최신 리뷰가 최근 1개월 내 작성됨": "Latest review is within 1 month",
+    "최신 리뷰가 최근 2개월 내 작성됨": "Latest review is within 2 months",
+    "최신 리뷰 작성 시점이 오래됨": "Latest review is old",
+    "광고의심 비율 정보 부족": "Ad-suspicion data unavailable",
+    "광고의심 비율이 낮은 편": "Low ad-suspicion ratio",
+    "광고의심 비율이 보통": "Moderate ad-suspicion ratio",
+    "광고의심 비율이 다소 높음": "Somewhat high ad-suspicion ratio",
+    "광고의심 비율이 높은 편": "High ad-suspicion ratio",
+  };
+  return mapEn[desc] ?? desc;
+}
+
 const HomeInteractive = ({
   stores: initialStores,
   initialStoreId = null,
   initialForceGoogle = false,
 }: HomeInteractiveProps) => {
+  const { language: selectedLanguage, setLanguage: setSelectedLanguage } = useAppLanguageClient();
   const [isMobile, setIsMobile] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [stores, setStores] = useState<StoreWithSummary[]>(initialStores.slice(0, 10));
@@ -187,6 +274,7 @@ const HomeInteractive = ({
   const [isLocating, setIsLocating] = useState(false);
   const [currentLocationLabel, setCurrentLocationLabel] = useState<string | null>(null);
   const [locationErrorMessage, setLocationErrorMessage] = useState<string | null>(null);
+  const [currentCoords, setCurrentCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const hasAttemptedNearbyAutoLoadRef = useRef(false);
   
   // Cache for store details to avoid re-fetching
@@ -208,6 +296,164 @@ const HomeInteractive = ({
   const aiSummaryFetchInFlightRef = useRef<Set<number>>(new Set());
   const aiSummaryFetchAttemptedRef = useRef<Set<number>>(new Set());
   const [aiSummaryLoadingMap, setAiSummaryLoadingMap] = useState<Record<number, boolean>>({});
+  const locale = useMemo(() => appLanguageToLocale(selectedLanguage), [selectedLanguage]);
+
+  const uiText = useMemo(() => {
+    if (selectedLanguage === "en") {
+      return {
+        language: "Language",
+        subtitle: "Can this rating be trusted? AI trust score for reviews",
+        searchPlaceholder: "Search restaurants (e.g. Korean food, samgyetang)",
+        locateNearby: "Nearby",
+        searching: "Searching...",
+        search: "Search",
+        loadingNearby: "Loading stores near your current location...",
+        noAddress: "No address",
+        foodType: "Cuisine",
+        signatureDish: "Signature",
+        koreanLabel: "Korean",
+        trustIndex: "Rating Trust Score",
+        scoreUnit: "pts",
+        appScore: "App Score",
+        backToList: "Back to list",
+        currentLocation: "Current location",
+        openNaverMap: "Naver Map",
+        openGoogleMap: "Google Maps",
+        countUnit: "reviews",
+        rankSuffix: "th",
+        loadingAiAnalyze: "AI is analyzing reviews...",
+        loadingAiSummary: "AI is summarizing reviews...",
+        authorReview: "Author reviews",
+        average: "avg",
+        mapOpen: "Open map",
+        reviewWrite: "Write Review",
+        reviewWriteClose: "Close Review",
+        aiSummary: "AI Review Summary",
+        aiSummaryEmpty: "AI summary is not ready yet.",
+        latestReview: "Latest Reviews",
+        appReview: "App Reviews",
+        compareNearby: "Compare Within 1km",
+        currentStore: "(Current store)",
+        compareEmpty: "No comparable stores within 1km.",
+        loadingStoreDetail: "Loading store details...",
+      };
+    }
+    if (selectedLanguage === "ja") {
+      return {
+        language: "言語",
+        subtitle: "この評価は信頼できる？ AIが算出する評価信頼スコア",
+        searchPlaceholder: "店舗検索（例: 韓国料理、参鶏湯）",
+        locateNearby: "近くのお店",
+        searching: "検索中...",
+        search: "検索",
+        loadingNearby: "現在地付近の店舗を読み込み中...",
+        noAddress: "住所情報なし",
+        foodType: "料理ジャンル",
+        signatureDish: "代表メニュー",
+        koreanLabel: "韓国語",
+        trustIndex: "評価信頼スコア",
+        scoreUnit: "点",
+        appScore: "アプリ評価",
+        backToList: "一覧へ戻る",
+        currentLocation: "現在地",
+        openNaverMap: "NAVERマップ",
+        openGoogleMap: "Googleマップ",
+        countUnit: "件",
+        rankSuffix: "位",
+        loadingAiAnalyze: "AIがレビューを分析しています...",
+        loadingAiSummary: "AIがレビューを要約しています...",
+        authorReview: "投稿レビュー",
+        average: "平均",
+        mapOpen: "地図で見る",
+        reviewWrite: "レビュー作成",
+        reviewWriteClose: "レビュー作成を閉じる",
+        aiSummary: "AIレビュー要約",
+        aiSummaryEmpty: "AIレビュー要約はまだ準備中です。",
+        latestReview: "最新レビュー",
+        appReview: "アプリレビュー",
+        compareNearby: "1km以内の比較",
+        currentStore: "(現在の店舗)",
+        compareEmpty: "半径1km以内に比較対象がありません",
+        loadingStoreDetail: "店舗情報を読み込み中です...",
+      };
+    }
+    if (selectedLanguage === "zh-CN") {
+      return {
+        language: "语言",
+        subtitle: "这个评分可靠吗？AI 评分可信度指数",
+        searchPlaceholder: "搜索店铺（例：韩餐、参鸡汤）",
+        locateNearby: "附近推荐",
+        searching: "搜索中...",
+        search: "搜索",
+        loadingNearby: "正在加载你当前位置附近的店铺...",
+        noAddress: "暂无地址信息",
+        foodType: "菜系",
+        signatureDish: "招牌菜",
+        koreanLabel: "韩文",
+        trustIndex: "评分可信度指数",
+        scoreUnit: "分",
+        appScore: "应用评分",
+        backToList: "返回列表",
+        currentLocation: "当前位置",
+        openNaverMap: "Naver 地图",
+        openGoogleMap: "Google 地图",
+        countUnit: "条",
+        rankSuffix: "名",
+        loadingAiAnalyze: "AI 正在分析评论...",
+        loadingAiSummary: "AI 正在生成摘要...",
+        authorReview: "作者评论",
+        average: "平均",
+        mapOpen: "在地图中查看",
+        reviewWrite: "写点评",
+        reviewWriteClose: "关闭写点评",
+        aiSummary: "AI 评论摘要",
+        aiSummaryEmpty: "AI 评论摘要暂未准备好。",
+        latestReview: "最新评论",
+        appReview: "应用内评论",
+        compareNearby: "1km内店铺对比",
+        currentStore: "(当前店铺)",
+        compareEmpty: "半径1km内没有可比较店铺",
+        loadingStoreDetail: "正在加载店铺信息...",
+      };
+    }
+    return {
+      language: "언어",
+      subtitle: "이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 지수",
+      searchPlaceholder: "가게 검색 (예: 한식, 삼계탕)",
+      locateNearby: "내 근처 추천",
+      searching: "검색 중...",
+      search: "검색",
+      loadingNearby: "현재 위치 기준으로 가게 목록을 불러오는 중...",
+      noAddress: "주소 정보 없음",
+      foodType: "음식 분류",
+      signatureDish: "대표 메뉴",
+      koreanLabel: "한국어",
+      trustIndex: "평점 믿음 지수",
+      scoreUnit: "점",
+      appScore: "앱 점수",
+      backToList: "목록으로",
+      currentLocation: "현재 위치",
+      openNaverMap: "네이버지도",
+      openGoogleMap: "구글지도",
+      countUnit: "개",
+      rankSuffix: "위",
+      loadingAiAnalyze: "AI가 리뷰를 분석하고 있어요",
+      loadingAiSummary: "AI가 리뷰를 요약하고 있어요.",
+      authorReview: "작성자 리뷰",
+      average: "평균",
+      mapOpen: "지도에서 보기",
+      reviewWrite: "리뷰 작성",
+      reviewWriteClose: "리뷰 작성 닫기",
+      aiSummary: "AI 리뷰 요약",
+      aiSummaryEmpty: "AI 리뷰 요약을 아직 준비하지 못했어요.",
+      latestReview: "최근 리뷰",
+      appReview: "리뷰랩 리뷰",
+      compareNearby: "1km 이내 가게 비교",
+      currentStore: "(현재 가게)",
+      compareEmpty: "반경 1km 내 비교할 가게가 없습니다",
+      loadingStoreDetail: "가게 정보를 불러오는 중입니다...",
+    };
+  }, [selectedLanguage]);
 
   const syncStoreIdToUrl = useCallback(
     (storeId: number | null, historyMode: "push" | "replace" = "push") => {
@@ -320,7 +566,13 @@ const HomeInteractive = ({
       const response = await fetch("/api/stores/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery.trim(), limit: 10 }),
+        body: JSON.stringify({
+          query: searchQuery.trim(),
+          limit: 10,
+          userLatitude: currentCoords?.latitude,
+          userLongitude: currentCoords?.longitude,
+          lang: selectedLanguage,
+        }),
       });
 
       if (response.ok) {
@@ -418,9 +670,10 @@ const HomeInteractive = ({
       setStoreDetail(cached);
       setIsLoadingDetail(false);
       // 백그라운드에서 최신 데이터 갱신 (UI는 안 건드림)
-      const bgUrl = options?.forceGoogle
-        ? `/api/stores/${storeId}?google=1`
-        : `/api/stores/${storeId}`;
+      const bgParams = new URLSearchParams();
+      bgParams.set("lang", selectedLanguage);
+      if (options?.forceGoogle) bgParams.set("google", "1");
+      const bgUrl = `/api/stores/${storeId}?${bgParams.toString()}`;
       fetch(bgUrl, { signal: controller.signal })
         .then(res => res.ok ? res.json() : null)
         .then(data => {
@@ -445,9 +698,10 @@ const HomeInteractive = ({
     setStoreDetail(null);
 
     try {
-      const detailUrl = options?.forceGoogle
-        ? `/api/stores/${storeId}?google=1`
-        : `/api/stores/${storeId}`;
+      const detailParams = new URLSearchParams();
+      detailParams.set("lang", selectedLanguage);
+      if (options?.forceGoogle) detailParams.set("google", "1");
+      const detailUrl = `/api/stores/${storeId}?${detailParams.toString()}`;
       const response = await fetch(detailUrl, {
         signal: controller.signal,
       });
@@ -485,7 +739,7 @@ const HomeInteractive = ({
         setIsLoadingDetail(false);
       }
     }
-  }, [syncStoreIdToUrl]);
+  }, [selectedLanguage, syncStoreIdToUrl]);
 
   const handleComparedStoreClick = async (storeId: number | string, storeName: string, storeAddress: string | null) => {
     setNavigatingComparedId(storeId);
@@ -573,7 +827,13 @@ const HomeInteractive = ({
         const response = await fetch("/api/stores/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query, limit: 10 }),
+          body: JSON.stringify({
+            query,
+            limit: 10,
+            userLatitude: currentCoords?.latitude,
+            userLongitude: currentCoords?.longitude,
+            lang: selectedLanguage,
+          }),
         });
         if (!response.ok) return null;
         const data = await response.json();
@@ -638,6 +898,43 @@ const HomeInteractive = ({
     }, 900);
   }, []);
 
+  const openGoogleMap = useCallback((storeName: string, storeAddress: string) => {
+    const query = `${storeName} ${storeAddress}`.trim();
+    const encodedQuery = encodeURIComponent(query);
+    const webUrl = `https://www.google.com/maps/search/?api=1&query=${encodedQuery}`;
+    const appUrl = `comgooglemaps://?q=${encodedQuery}`;
+    const isMobileUa = /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+
+    if (!isMobileUa) {
+      window.open(webUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    let didHide = false;
+    const onVisibilityChange = () => {
+      if (document.hidden) didHide = true;
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.location.href = appUrl;
+
+    window.setTimeout(() => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (!didHide) {
+        window.location.href = webUrl;
+      }
+    }, 900);
+  }, []);
+
+  useEffect(() => {
+    storeDetailCache.current.clear();
+    aiSummaryFetchAttemptedRef.current.clear();
+    aiSummaryFetchInFlightRef.current.clear();
+    if (selectedStoreIdRef.current !== null) {
+      void handleStoreClick(selectedStoreIdRef.current, { syncUrl: false });
+    }
+  }, [selectedLanguage, handleStoreClick]);
+
   useEffect(() => {
     if (hasAutoOpenedStoreFromQueryRef.current) return;
     if (typeof initialStoreId === "number" && Number.isFinite(initialStoreId) && initialStoreId > 0) {
@@ -696,7 +993,13 @@ const HomeInteractive = ({
 
   useEffect(() => {
     if (!storeDetail || selectedStoreId === null) return;
-    if (storeDetail.aiReviewSummary && storeDetail.aiReviewSummary.trim().length > 0) return;
+    if (
+      selectedLanguage === "ko" &&
+      storeDetail.aiReviewSummary &&
+      storeDetail.aiReviewSummary.trim().length > 0
+    ) {
+      return;
+    }
     if (aiSummaryFetchInFlightRef.current.has(selectedStoreId)) return;
     if (aiSummaryFetchAttemptedRef.current.has(selectedStoreId)) return;
 
@@ -705,7 +1008,9 @@ const HomeInteractive = ({
     void (async () => {
       setAiSummaryLoadingMap((prev) => ({ ...prev, [selectedStoreId]: true }));
       try {
-        const response = await fetch(`/api/stores/${selectedStoreId}/ai-summary`);
+        const response = await fetch(
+          `/api/stores/${selectedStoreId}/ai-summary?lang=${encodeURIComponent(selectedLanguage)}`
+        );
         if (!response.ok) return;
         const data = await response.json();
         if (!data?.ok) return;
@@ -763,7 +1068,7 @@ const HomeInteractive = ({
         setAiSummaryLoadingMap((prev) => ({ ...prev, [selectedStoreId]: false }));
       }
     })();
-  }, [selectedStoreId, storeDetail]);
+  }, [selectedLanguage, selectedStoreId, storeDetail]);
 
   const showDetailPane = selectedStoreId !== null;
   const LIST_CARD_HEIGHT = 126;
@@ -866,6 +1171,7 @@ const HomeInteractive = ({
         if (!coords) {
           throw new Error("geolocation_unavailable");
         }
+        setCurrentCoords(coords);
 
         const reversePromise = fetch(
           `/api/geocode/reverse?lat=${encodeURIComponent(coords.latitude)}&lon=${encodeURIComponent(
@@ -887,6 +1193,8 @@ const HomeInteractive = ({
             latitude: coords.latitude,
             longitude: coords.longitude,
             limit: 10,
+            keyword: searchQuery.trim() || undefined,
+            lang: selectedLanguage,
           }),
         });
         if (!response.ok) throw new Error("nearby_api_failed");
@@ -916,7 +1224,7 @@ const HomeInteractive = ({
         setIsLocating(false);
       }
     })();
-  }, []);
+  }, [searchQuery, selectedLanguage]);
 
   useEffect(() => {
     if (hasAttemptedNearbyAutoLoadRef.current) return;
@@ -977,8 +1285,30 @@ const HomeInteractive = ({
       >
         <h1 style={{ fontSize: isMobile ? 26 : 36, fontWeight: 800, margin: 0, color: "#ffffff" }}>리뷰랩</h1>
         <p style={{ marginTop: 6, fontSize: isMobile ? 12 : 16, opacity: 1, color: "#e8dfc9" }}>
-          이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 지수
+          {uiText.subtitle}
         </p>
+        <div style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: "#e8dfc9", fontWeight: 700 }}>{uiText.language}</span>
+          <select
+            value={selectedLanguage}
+            onChange={(e) => setSelectedLanguage(normalizeAppLanguage(e.target.value))}
+            style={{
+              borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.35)",
+              background: "rgba(255,255,255,0.12)",
+              color: "#fff",
+              padding: "6px 10px",
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            {SUPPORTED_APP_LANGUAGES.map((lang) => (
+              <option key={lang} value={lang} style={{ color: "#1b2b1f" }}>
+                {appLanguageNativeLabel(lang)}
+              </option>
+            ))}
+          </select>
+        </div>
       </header>
 
       <div
@@ -1009,7 +1339,7 @@ const HomeInteractive = ({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="가게 이름이나 주소로 검색..."
+                  placeholder={uiText.searchPlaceholder}
                   style={{
                     flex: 1,
                     minWidth: 0,
@@ -1049,13 +1379,31 @@ const HomeInteractive = ({
                     }
                   }}
                 >
-                  {isSearching ? "검색 중..." : "검색"}
+                  {isSearching ? uiText.searching : uiText.search}
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={handleLocateAndRecommend}
+                disabled={isLocating}
+                style={{
+                  marginTop: 8,
+                  width: "100%",
+                  padding: isMobile ? "10px 12px" : "11px 14px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(40, 80, 46, 0.5)",
+                  background: "rgba(40, 80, 46, 0.08)",
+                  color: "#28502E",
+                  fontWeight: 700,
+                  cursor: isLocating ? "not-allowed" : "pointer",
+                }}
+              >
+                {uiText.locateNearby}
+              </button>
             </form>
             {isLocating && (
               <div style={{ marginTop: -4, marginBottom: 8, fontSize: 12, color: "#8C7051" }}>
-                현재 위치 기준으로 가게 목록을 불러오는 중...
+                {uiText.loadingNearby}
               </div>
             )}
             {locationErrorMessage && (
@@ -1065,7 +1413,7 @@ const HomeInteractive = ({
             )}
             {currentLocationLabel && (
               <div style={{ fontSize: 12, color: "#47682C", fontWeight: 700, marginBottom: 8 }}>
-                현재 위치: {currentLocationLabel}
+                {uiText.currentLocation}: {currentLocationLabel}
               </div>
             )}
 
@@ -1116,17 +1464,24 @@ const HomeInteractive = ({
                       {store.name}
                     </div>
                     <div style={{ fontSize: 13, color: "#8C7051", marginBottom: 8 }}>
-                      {store.address ?? "주소 정보 없음"}
+                      {store.address ?? uiText.noAddress}
                     </div>
+                    {(store.cuisineType || store.signatureDish) && (
+                      <div style={{ fontSize: 12, color: "#47682C", marginBottom: 8, fontWeight: 700 }}>
+                        {store.cuisineType ? `${uiText.foodType}: ${store.cuisineType}` : ""}
+                        {store.cuisineType && store.signatureDish ? " · " : ""}
+                        {store.signatureDish ? `${uiText.signatureDish}: ${store.signatureDish}` : ""}
+                      </div>
+                    )}
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
                       <span style={{ color: "#28502E" }}>
-                        ⭐ {store.summary.weightedRating?.toFixed(1) ?? "-"} ({externalCount}개)
+                        ⭐ {store.summary.weightedRating?.toFixed(1) ?? "-"} ({formatCountWithUnit(externalCount, uiText.countUnit)})
                       </span>
                       <span style={{ color: "#47682C", fontWeight: 700 }}>
-                        ★ 앱 점수 {store.summary.appAverageRating?.toFixed(1) ?? "-"} ({inappCount}개)
+                        ★ {uiText.appScore} {store.summary.appAverageRating?.toFixed(1) ?? "-"} ({formatCountWithUnit(inappCount, uiText.countUnit)})
                       </span>
                       <span style={{ color: "#28502E" }}>
-                        평점 믿음 지수 {totalReviewCount > 0 ? `${ratingTrust.emoji} ${ratingTrust.label} (${ratingTrust.totalScore}점)` : "-"}
+                        {uiText.trustIndex} {totalReviewCount > 0 ? `${ratingTrust.emoji} ${localizeTrustLabel(ratingTrust.label, selectedLanguage)} (${ratingTrust.totalScore}${uiText.scoreUnit ? ` ${uiText.scoreUnit}` : ""})` : "-"}
                       </span>
                     </div>
                   </div>
@@ -1183,7 +1538,7 @@ const HomeInteractive = ({
                 color: "#28502E",
               }}
             >
-              ← 목록으로
+              ← {uiText.backToList}
             </button>
           )}
 
@@ -1209,10 +1564,10 @@ const HomeInteractive = ({
                 margin: "0 auto 20px",
               }} />
               <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-                🔍 AI가 리뷰를 분석하고 있어요
+                🔍 {uiText.loadingAiAnalyze}
               </div>
               <div style={{ fontSize: 14, color: "#8C7051", animation: "pulse 1.5s ease-in-out infinite" }}>
-                잠시만 기다려주세요
+                {selectedLanguage === "ko" ? "잠시만 기다려주세요" : "Please wait..."}
               </div>
             </div>
           )}
@@ -1225,6 +1580,12 @@ const HomeInteractive = ({
                   storeDetail.summary.externalReviewCount ?? 0
                 );
                 const inappCount = Math.max(storeDetail.summary.inappReviewCount ?? 0, 0);
+                const localizedName = storeDetail.localizedStore?.localizedName ?? storeDetail.store.name;
+                const localizedAddress =
+                  storeDetail.localizedStore?.localizedAddress ?? storeDetail.store.address;
+                const koreanName = storeDetail.localizedStore?.koreanName ?? storeDetail.store.name;
+                const koreanAddress =
+                  storeDetail.localizedStore?.koreanAddress ?? storeDetail.store.address;
                 return (
               <div
                 style={{
@@ -1246,18 +1607,30 @@ const HomeInteractive = ({
                   {/* Left side: Store info */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {/* 가게 이름 */}
-                    <div style={{ fontSize: isMobile ? 23 : 28, fontWeight: 800, color: "#28502E", marginBottom: 16 }}>
-                      🍽 {storeDetail.store.name}
+                    <div style={{ fontSize: isMobile ? 23 : 28, fontWeight: 800, color: "#28502E", marginBottom: 6 }}>
+                      🍽 {localizedName}
                     </div>
+                    {selectedLanguage !== "ko" && shouldShowKoreanSupplement(localizedName, koreanName) && (
+                      <div style={{ fontSize: isMobile ? 14 : 15, color: "#8C7051", fontWeight: 700, marginBottom: 12 }}>
+                        {uiText.koreanLabel}: {koreanName}
+                      </div>
+                    )}
+                    {(storeDetail.store.cuisineType || storeDetail.store.signatureDish) && (
+                      <div style={{ fontSize: isMobile ? 13 : 14, color: "#47682C", marginBottom: 12, fontWeight: 700 }}>
+                        {storeDetail.store.cuisineType ? `${uiText.foodType}: ${storeDetail.store.cuisineType}` : ""}
+                        {storeDetail.store.cuisineType && storeDetail.store.signatureDish ? " · " : ""}
+                        {storeDetail.store.signatureDish ? `${uiText.signatureDish}: ${storeDetail.store.signatureDish}` : ""}
+                      </div>
+                    )}
 
                     {/* 평점 */}
                     {storeDetail.insight?.rating !== null && storeDetail.insight?.rating !== undefined && (
                       <>
                         <div style={{ fontSize: isMobile ? 34 : 44, fontWeight: 800, color: "#28502E", marginBottom: 4 }}>
-                          ⭐ {storeDetail.insight.rating.toFixed(1)} <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: "#28502E" }}>({externalCount}개)</span>
+                          ⭐ {storeDetail.insight.rating.toFixed(1)} <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: "#28502E" }}>({formatCountWithUnit(externalCount, uiText.countUnit)})</span>
                         </div>
                         <div style={{ fontSize: isMobile ? 17 : 20, fontWeight: 800, color: "#47682C", marginBottom: 12 }}>
-                          ★ 앱 점수 {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"} <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 700, color: "#47682C" }}>({inappCount}개)</span>
+                          ★ {uiText.appScore} {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"} <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 700, color: "#47682C" }}>({formatCountWithUnit(inappCount, uiText.countUnit)})</span>
                         </div>
                       </>
                     )}
@@ -1273,21 +1646,21 @@ const HomeInteractive = ({
                       return (
                         <div style={{ marginBottom: 12 }}>
                           <div style={{ fontSize: isMobile ? 16 : 18, fontWeight: 700, color: "#28502E" }}>
-                            평점 믿음 지수 {detailReviewCount > 0 ? `${emoji} ${label} (${totalScore}점)` : "-"}
+                            {uiText.trustIndex} {detailReviewCount > 0 ? `${emoji} ${localizeTrustLabel(label, selectedLanguage)} (${totalScore}${uiText.scoreUnit ? ` ${uiText.scoreUnit}` : ""})` : "-"}
                           </div>
                           {detailReviewCount > 0 && (
                             <div style={{ fontSize: isMobile ? 12 : 13, color: "#8C7051", marginTop: 6 }}>
                               <div style={{ lineHeight: 1.45 }}>
-                                {breakdown.sampleSizeDesc} (표본 {breakdown.sampleSize}점 {breakdown.sampleSizeEmoji})
+                                {localizeTrustDesc(breakdown.sampleSizeDesc, selectedLanguage)} (S {breakdown.sampleSize} {breakdown.sampleSizeEmoji})
                               </div>
                               <div style={{ lineHeight: 1.45 }}>
-                                {breakdown.stabilityDesc} (안정성 {breakdown.stability}점 {breakdown.stabilityEmoji})
+                                {localizeTrustDesc(breakdown.stabilityDesc, selectedLanguage)} (T {breakdown.stability} {breakdown.stabilityEmoji})
                               </div>
                               <div style={{ lineHeight: 1.45 }}>
-                                {breakdown.freshnessDesc} (최신성 {breakdown.freshness}점 {breakdown.freshnessEmoji})
+                                {localizeTrustDesc(breakdown.freshnessDesc, selectedLanguage)} (F {breakdown.freshness} {breakdown.freshnessEmoji})
                               </div>
                               <div style={{ lineHeight: 1.45 }}>
-                                {breakdown.adSuspicionDesc} (광고의심 {breakdown.adSuspicion}점 {breakdown.adSuspicionEmoji})
+                                {localizeTrustDesc(breakdown.adSuspicionDesc, selectedLanguage)} (A {breakdown.adSuspicion} {breakdown.adSuspicionEmoji})
                               </div>
                             </div>
                           )}
@@ -1325,7 +1698,7 @@ const HomeInteractive = ({
                               textDecoration: "none",
                             }}
                           >
-                            📍 1km 이내 종합점수 {rank}위 / {total}개
+                            📍 1km {selectedLanguage === "ko" ? "이내 종합점수" : "rank"} {rank}{uiText.rankSuffix} / {formatCountWithUnit(total, uiText.countUnit)}
                           </button>
                         </div>
                       );
@@ -1333,33 +1706,71 @@ const HomeInteractive = ({
 
                     {/* 주소 링크 */}
                     <div style={{ fontSize: isMobile ? 15 : 16, color: "#28502E", lineHeight: 1.4 }}>
-                      {storeDetail.store.address ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const address = storeDetail.store.address;
-                            if (!address) return;
-                            openNaverMap(storeDetail.store.name, address);
-                          }}
-                          style={{
-                            border: "none",
-                            background: "transparent",
-                            padding: 0,
-                            margin: 0,
-                            color: "#28502E",
-                            textDecoration: "none",
-                            cursor: "pointer",
-                            textAlign: "left",
-                            fontSize: isMobile ? 15 : 16,
-                            fontWeight: 700,
-                            lineHeight: 1.4,
-                          }}
-                        >
-                          📍 지도에서 보기
-                        </button>
+                      {localizedAddress ? (
+                        <div style={{ marginBottom: 6, fontWeight: 700 }}>
+                          {localizedAddress}
+                          {selectedLanguage !== "ko" &&
+                            shouldShowKoreanSupplement(localizedAddress, koreanAddress) && (
+                              <span style={{ color: "#8C7051", marginLeft: 8 }}>
+                                ({uiText.koreanLabel}: {koreanAddress})
+                              </span>
+                            )}
+                        </div>
                       ) : (
-                        "주소 정보 없음"
+                        <div style={{ marginBottom: 6 }}>{uiText.noAddress}</div>
                       )}
+                      {storeDetail.store.address ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 2 }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const address = storeDetail.store.address;
+                              if (!address) return;
+                              openNaverMap(storeDetail.store.name, address);
+                            }}
+                            style={{
+                              border: "1px solid rgba(40, 80, 46, 0.35)",
+                              background: "rgba(40, 80, 46, 0.08)",
+                              padding: "6px 10px",
+                              borderRadius: 8,
+                              margin: 0,
+                              color: "#28502E",
+                              textDecoration: "none",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              fontSize: isMobile ? 13 : 14,
+                              fontWeight: 700,
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            📍 {uiText.openNaverMap}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const address = storeDetail.store.address;
+                              if (!address) return;
+                              openGoogleMap(storeDetail.store.name, address);
+                            }}
+                            style={{
+                              border: "1px solid rgba(40, 80, 46, 0.35)",
+                              background: "rgba(40, 80, 46, 0.08)",
+                              padding: "6px 10px",
+                              borderRadius: 8,
+                              margin: 0,
+                              color: "#28502E",
+                              textDecoration: "none",
+                              cursor: "pointer",
+                              textAlign: "left",
+                              fontSize: isMobile ? 13 : 14,
+                              fontWeight: 700,
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            📍 {uiText.openGoogleMap}
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -1387,7 +1798,7 @@ const HomeInteractive = ({
                         cursor: "pointer",
                       }}
                     >
-                      {isReviewFormOpen ? "리뷰 작성 닫기" : "리뷰 작성"}
+                      {isReviewFormOpen ? uiText.reviewWriteClose : uiText.reviewWrite}
                     </button>
 
                     {storeDetail.photos && storeDetail.photos.length > 0 && (
@@ -1632,7 +2043,7 @@ const HomeInteractive = ({
 
               <div style={{ marginBottom: 24 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
-                  AI 리뷰 요약
+                  {uiText.aiSummary}
                 </h3>
                 {(() => {
                   const isAiSummaryLoading =
@@ -1673,7 +2084,7 @@ const HomeInteractive = ({
                             }}
                           />
                           <div style={{ fontSize: 14, fontWeight: 700 }}>
-                            AI가 리뷰를 요약하고 있어요.
+                            {uiText.loadingAiSummary}
                           </div>
                         </div>
                       </div>
@@ -1693,7 +2104,7 @@ const HomeInteractive = ({
                           fontWeight: 700,
                         }}
                       >
-                        AI 리뷰 요약을 아직 준비하지 못했어요.
+                        {uiText.aiSummaryEmpty}
                       </div>
                     );
                   }
@@ -1734,7 +2145,7 @@ const HomeInteractive = ({
 
               <div style={{ marginBottom: 24 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
-                  최신 리뷰
+                  {uiText.latestReview}
                 </h3>
                 {storeDetail.latestGoogleReviews && storeDetail.latestGoogleReviews.length > 0 ? (
                   <div style={{ display: "grid", gap: 10 }}>
@@ -1749,10 +2160,10 @@ const HomeInteractive = ({
                         }}
                       >
                         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 13, color: "#28502E", marginBottom: 6 }}>
-                          <strong>{review.rating.toFixed(1)}점</strong>
-                          <span>{review.authorName ?? "익명"}</span>
+                          <strong>{review.rating.toFixed(1)}{selectedLanguage === "en" ? "" : "점"}</strong>
+                          <span>{review.authorName ?? (selectedLanguage === "ko" ? "익명" : "Anonymous")}</span>
                           <span style={{ color: "#8C7051" }}>
-                            {review.relativePublishedTime ?? (review.publishedAt ? new Date(review.publishedAt).toLocaleDateString("ko-KR") : "-")}
+                            {review.relativePublishedTime ?? (review.publishedAt ? new Date(review.publishedAt).toLocaleDateString(locale) : "-")}
                           </span>
                         </div>
                         <div style={{ color: "#28502E", lineHeight: 1.45, fontSize: 14 }}>
@@ -1770,14 +2181,16 @@ const HomeInteractive = ({
                     background: "rgba(140, 112, 81, 0.06)",
                     fontSize: 14,
                   }}>
-                    최신 구글 리뷰를 불러오지 못했거나 공개된 리뷰가 없습니다.
+                    {selectedLanguage === "ko"
+                      ? "최신 구글 리뷰를 불러오지 못했거나 공개된 리뷰가 없습니다."
+                      : "Latest public reviews are not available."}
                   </div>
                 )}
               </div>
 
               <div style={{ marginBottom: 24 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
-                  리뷰랩 리뷰
+                  {uiText.appReview}
                 </h3>
 
                 <div style={{ display: "grid", gap: 12 }}>
@@ -1809,14 +2222,18 @@ const HomeInteractive = ({
                             color: "#28502E",
                           }}
                         >
-                          <strong>{review.rating.toFixed(1)}점</strong>
-                          <span>{review.source === "external" ? "외부" : "앱"}</span>
+                          <strong>{review.rating.toFixed(1)}{selectedLanguage === "en" ? "" : "점"}</strong>
+                          <span>
+                            {review.source === "external"
+                              ? (selectedLanguage === "ko" ? "외부" : "External")
+                              : (selectedLanguage === "ko" ? "앱" : "App")}
+                          </span>
                           <span style={{ color: "#47682C", fontWeight: 700 }}>
-                            ★ 앱 점수 {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"}
+                            ★ {uiText.appScore} {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"}
                           </span>
                           {review.authorStats && (
                             <span>
-                              작성자 리뷰 {review.authorStats.reviewCount}개 · 평균 {review.authorStats.averageRating.toFixed(1)}점
+                              {uiText.authorReview} {formatCountWithUnit(review.authorStats.reviewCount, uiText.countUnit)} · {uiText.average} {review.authorStats.averageRating.toFixed(1)}{selectedLanguage === "en" ? "" : "점"}
                             </span>
                           )}
                         </div>
@@ -1828,7 +2245,7 @@ const HomeInteractive = ({
                         )}
                         <div style={{ fontSize: 12, color: "#8C7051" }}>
                           {review.authorName ?? "익명"} ·{" "}
-                          {new Date(review.createdAt).toLocaleString("ko-KR")}
+                          {new Date(review.createdAt).toLocaleString(locale)}
                         </div>
                       </div>
                     );
@@ -1838,7 +2255,7 @@ const HomeInteractive = ({
 
               <div ref={nearbyCompareSectionRef} style={{ marginBottom: 24 }}>
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
-                  1km 이내 가게 비교
+                  {uiText.compareNearby}
                 </h3>
                 {storeDetail.insight?.comparedStores && storeDetail.insight.comparedStores.length > 0 ? (
                   <div style={{ border: "1px solid rgba(140, 112, 81, 0.4)", borderRadius: 12, background: "rgba(140, 112, 81, 0.06)", overflow: "hidden" }}>
@@ -1876,11 +2293,11 @@ const HomeInteractive = ({
                           )}
                           {comparedStore.isSelf && (
                             <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 700, color: "#28502E" }}>
-                              (현재 가게)
+                              {uiText.currentStore}
                             </span>
                           )}
                           <span style={{ marginLeft: 8, color: "#8C7051" }}>
-                            · ⭐{comparedStore.rating.toFixed(1)} · <span style={{ color: "#47682C", fontWeight: 700 }}>★ 앱 점수 {typeof comparedStore.appAverageRating === "number" ? comparedStore.appAverageRating.toFixed(1) : "-"}</span> · 리뷰 {comparedStore.reviewCount} · {comparedStore.reviewCount > 0 ? `${comparedStore.trustScore.emoji} ${comparedStore.trustScore.totalScore}점` : "-"}
+                            · ⭐{comparedStore.rating.toFixed(1)} · <span style={{ color: "#47682C", fontWeight: 700 }}>★ {uiText.appScore} {typeof comparedStore.appAverageRating === "number" ? comparedStore.appAverageRating.toFixed(1) : "-"}</span> · {formatCountWithUnit(comparedStore.reviewCount, uiText.countUnit)} · {comparedStore.reviewCount > 0 ? `${comparedStore.trustScore.emoji} ${comparedStore.trustScore.totalScore} ${uiText.scoreUnit}` : "-"}
                           </span>
                         </div>
                       );
@@ -1918,7 +2335,7 @@ const HomeInteractive = ({
                     fontSize: 14,
                     background: "rgba(140, 112, 81, 0.06)",
                   }}>
-                    반경 1km 내 비교할 가게가 없습니다
+                    {uiText.compareEmpty}
                   </div>
                 )}
               </div>
@@ -1945,7 +2362,7 @@ const HomeInteractive = ({
                 style={{ marginBottom: isReviewFormOpen ? 24 : 0, display: isReviewFormOpen ? "block" : "none" }}
               >
                 <h3 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12, color: "#28502E" }}>
-                  리뷰 작성
+                  {uiText.reviewWrite}
                 </h3>
                 <UserReviewForm storeId={selectedStoreId!} />
               </div>
@@ -1954,7 +2371,7 @@ const HomeInteractive = ({
 
           {!isLoadingDetail && !storeDetail && showDetailPane && (
             <div style={{ textAlign: "center", padding: 40, color: "#8C7051" }}>
-              가게 정보를 불러오는 중입니다...
+              {uiText.loadingStoreDetail}
             </div>
           )}
         </section>

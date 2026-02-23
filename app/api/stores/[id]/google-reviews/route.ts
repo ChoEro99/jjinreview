@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getGoogleReviewsWithAiForStore } from "@/src/lib/store-service";
+import { normalizeAppLanguage } from "@/src/lib/language";
 
 export async function GET(
   req: Request,
@@ -16,10 +17,12 @@ export async function GET(
     const maxReviewsRaw = Number(url.searchParams.get("maxReviews"));
     const maxAgeHoursRaw = Number(url.searchParams.get("maxAgeHours"));
     const forceRaw = url.searchParams.get("force");
+    const language = normalizeAppLanguage(url.searchParams.get("lang"));
     const result = await getGoogleReviewsWithAiForStore(storeId, {
       maxReviews: Number.isFinite(maxReviewsRaw) ? maxReviewsRaw : undefined,
       maxAgeHours: Number.isFinite(maxAgeHoursRaw) ? maxAgeHoursRaw : undefined,
       forceRefresh: forceRaw === "true",
+      language,
     });
 
     return NextResponse.json({

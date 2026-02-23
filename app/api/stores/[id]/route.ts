@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getStoreDetail } from "@/src/lib/store-service";
+import { normalizeAppLanguage } from "@/src/lib/language";
 
 type StoreDetailResponse = Awaited<ReturnType<typeof getStoreDetail>>;
 
@@ -20,13 +21,14 @@ export async function GET(
   try {
     const url = new URL(req.url);
     const forceGoogle = url.searchParams.get("google") === "1";
+    const language = normalizeAppLanguage(url.searchParams.get("lang"));
     const params = await context.params;
     const storeId = Number(params.id);
     if (!storeId) {
       return NextResponse.json({ ok: false, error: "invalid id" }, { status: 400 });
     }
 
-    const cacheKey = `${storeId}:${forceGoogle ? "g1" : "g0"}`;
+    const cacheKey = `${storeId}:${forceGoogle ? "g1" : "g0"}:${language}`;
     const now = Date.now();
     cleanupDetailCache(now);
     const hit = detailCache.get(cacheKey);
@@ -34,7 +36,7 @@ export async function GET(
       return NextResponse.json({ ok: true, ...hit.payload });
     }
 
-    const detail = await getStoreDetail(storeId, { forceGoogle });
+    const detail = await getStoreDetail(storeId, { forceGoogle, language });
     detailCache.set(cacheKey, {
       expiresAt: now + DETAIL_CACHE_TTL_MS,
       payload: detail,

@@ -1,4 +1,8 @@
-import { analyzeReviewWithProvider, summarizeLatestReviewsWithGemini } from "@/src/lib/ai-provider";
+import {
+  analyzeReviewWithProvider,
+  summarizeLatestReviewsWithGemini,
+  translateTextWithGemini,
+} from "@/src/lib/ai-provider";
 import {
   adAnyProbabilityFromAnalysis,
   heuristicAnalyzeReview,
@@ -6,11 +10,18 @@ import {
 } from "@/src/lib/review-engine";
 import { supabaseServer } from "@/src/lib/supabaseServer";
 import { computeRatingTrustScore } from "@/src/lib/rating-trust-score";
+import {
+  type AppLanguage,
+  appLanguageToGoogleLanguageCode,
+  normalizeAppLanguage,
+} from "@/src/lib/language";
 
 export type StoreBase = {
   id: number;
   name: string;
   address: string | null;
+  cuisineType: string | null;
+  signatureDish: string | null;
   latitude: number | null;
   longitude: number | null;
   kakaoPlaceId: string | null;
@@ -196,6 +207,76 @@ function inferQueryCategory(keyword: string): StoreCategory | null {
     return "restaurant";
   }
   return null;
+}
+
+type StoreFoodInfo = {
+  cuisineType: string | null;
+  signatureDish: string | null;
+};
+
+const CUISINE_KEYWORDS: Array<{ cuisine: string; keywords: string[] }> = [
+  { cuisine: "한식", keywords: ["한식", "국밥", "갈비", "삼겹", "냉면", "백반", "한정식"] },
+  { cuisine: "일식", keywords: ["일식", "스시", "초밥", "라멘", "우동", "돈까스", "규동"] },
+  { cuisine: "중식", keywords: ["중식", "짜장", "짬뽕", "탕수육", "마라", "훠궈"] },
+  { cuisine: "양식", keywords: ["양식", "파스타", "스테이크", "피자", "리조또", "브런치"] },
+  { cuisine: "카페", keywords: ["카페", "커피", "디저트", "베이커리", "브런치"] },
+];
+
+const SIGNATURE_MENU_KEYWORDS: Array<{ dish: string; keywords: string[] }> = [
+  { dish: "삼계탕", keywords: ["삼계탕"] },
+  { dish: "국밥", keywords: ["국밥", "순대국", "돼지국밥"] },
+  { dish: "갈비", keywords: ["갈비", "갈비탕"] },
+  { dish: "삼겹살", keywords: ["삼겹", "삼겹살"] },
+  { dish: "치킨", keywords: ["치킨", "닭강정"] },
+  { dish: "초밥", keywords: ["초밥", "스시"] },
+  { dish: "라멘", keywords: ["라멘"] },
+  { dish: "우동", keywords: ["우동"] },
+  { dish: "돈까스", keywords: ["돈까스", "돈카츠"] },
+  { dish: "짜장면", keywords: ["짜장", "짜장면"] },
+  { dish: "짬뽕", keywords: ["짬뽕"] },
+  { dish: "마라탕", keywords: ["마라탕", "마라"] },
+  { dish: "피자", keywords: ["피자"] },
+  { dish: "햄버거", keywords: ["버거", "햄버거"] },
+  { dish: "파스타", keywords: ["파스타"] },
+  { dish: "커피", keywords: ["커피", "카페", "에스프레소"] },
+];
+
+function inferStoreFoodInfoByName(name: string): StoreFoodInfo {
+  const text = name.toLowerCase();
+  const cuisine = CUISINE_KEYWORDS.find((row) => row.keywords.some((word) => text.includes(word)))?.cuisine ?? null;
+  const signatureDish =
+    SIGNATURE_MENU_KEYWORDS.find((row) => row.keywords.some((word) => text.includes(word)))?.dish ??
+    null;
+  return { cuisineType: cuisine, signatureDish };
+}
+
+function doesStoreMatchFoodKeyword(store: StoreBase, keyword: string | null | undefined) {
+  if (!keyword) return true;
+  const normalized = keyword.trim().toLowerCase();
+  if (!normalized) return true;
+  const expandedKeywords = [normalized];
+  if (normalized.includes("korean") || normalized.includes("한국") || normalized.includes("韓国")) {
+    expandedKeywords.push("한식");
+  }
+  if (normalized.includes("japanese") || normalized.includes("일본") || normalized.includes("日本")) {
+    expandedKeywords.push("일식");
+  }
+  if (normalized.includes("chinese") || normalized.includes("중국") || normalized.includes("中国")) {
+    expandedKeywords.push("중식");
+  }
+  if (normalized.includes("western") || normalized.includes("양식")) {
+    expandedKeywords.push("양식");
+  }
+  const name = store.name.toLowerCase();
+  const address = (store.address ?? "").toLowerCase();
+  const cuisine = (store.cuisineType ?? "").toLowerCase();
+  const signature = (store.signatureDish ?? "").toLowerCase();
+  return expandedKeywords.some((query) => (
+    name.includes(query) ||
+    address.includes(query) ||
+    cuisine.includes(query) ||
+    signature.includes(query)
+  ));
 }
 
 function isSearchableStoreName(name: string) {
@@ -414,10 +495,14 @@ function normalizeUserReviewRow(row: Record<string, unknown>): Omit<ReviewRecord
 }
 
 function normalizeStoreRow(row: Record<string, unknown>): StoreBase {
+  const name = typeof row.name === "string" ? row.name : "이름없음";
+  const foodInfo = inferStoreFoodInfoByName(name);
   return {
     id: toNumber(row.id, 0) ?? 0,
-    name: typeof row.name === "string" ? row.name : "이름없음",
+    name,
     address: typeof row.address === "string" ? row.address : null,
+    cuisineType: foodInfo.cuisineType,
+    signatureDish: foodInfo.signatureDish,
     latitude: toNumber(row.latitude),
     longitude: toNumber(row.longitude),
     kakaoPlaceId: typeof row.kakao_place_id === "string" ? row.kakao_place_id : null,
@@ -1162,11 +1247,15 @@ async function findRegisteredStoresByKeyword(
     .filter((row) =>
       categoryFilter ? inferStoreCategoryByName(row.name) === categoryFilter : true
     )
-    .map((row) => ({
-      row,
-      relevance: queryRelevanceScore(keyword, row.name, row.address),
-    }))
-    .filter((item) => item.relevance >= minRelevance)
+    .map((row) => {
+      const base = queryRelevanceScore(keyword, row.name, row.address);
+      const foodMatchBoost = doesStoreMatchFoodKeyword(row, keyword) ? 18 : 0;
+      return {
+        row,
+        relevance: base + foodMatchBoost,
+      };
+    })
+    .filter((item) => item.relevance >= minRelevance || doesStoreMatchFoodKeyword(item.row, keyword))
     .sort((a, b) => {
       if (b.relevance !== a.relevance) return b.relevance - a.relevance;
       return (b.row.externalReviewCount ?? 0) - (a.row.externalReviewCount ?? 0);
@@ -1332,6 +1421,104 @@ function fallbackAdSuspectPercentFromSummary(summary?: { adSuspectRatio?: number
   const ratio = summary?.adSuspectRatio;
   if (typeof ratio !== "number" || !Number.isFinite(ratio)) return null;
   return Math.max(0, Math.min(100, Math.round(ratio * 100)));
+}
+
+const translatedAiSummaryMemoryCache = new Map<
+  string,
+  { translatedText: string; createdAtMs: number }
+>();
+
+function translatedSummaryCacheKey(storeId: number, language: AppLanguage) {
+  return `${storeId}:${language}`;
+}
+
+function getTranslatedAiSummaryFromMemoryCache(storeId: number, language: AppLanguage) {
+  const key = translatedSummaryCacheKey(storeId, language);
+  const entry = translatedAiSummaryMemoryCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.createdAtMs > AI_SUMMARY_TTL_MS) {
+    translatedAiSummaryMemoryCache.delete(key);
+    return null;
+  }
+  return entry.translatedText;
+}
+
+function setTranslatedAiSummaryToMemoryCache(
+  storeId: number,
+  language: AppLanguage,
+  translatedText: string
+) {
+  const key = translatedSummaryCacheKey(storeId, language);
+  translatedAiSummaryMemoryCache.set(key, {
+    translatedText,
+    createdAtMs: Date.now(),
+  });
+}
+
+async function localizeStoreNameAndAddress(input: {
+  storeNameKo: string;
+  storeAddressKo: string | null;
+  language: AppLanguage;
+}) {
+  if (input.language === "ko") {
+    return {
+      localizedName: input.storeNameKo,
+      localizedAddress: input.storeAddressKo,
+      koreanName: input.storeNameKo,
+      koreanAddress: input.storeAddressKo,
+    };
+  }
+
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    return {
+      localizedName: input.storeNameKo,
+      localizedAddress: input.storeAddressKo,
+      koreanName: input.storeNameKo,
+      koreanAddress: input.storeAddressKo,
+    };
+  }
+
+  try {
+    const place = await findGooglePlaceForStore(
+      apiKey,
+      {
+        name: input.storeNameKo,
+        address: input.storeAddressKo,
+      },
+      input.language
+    );
+    if (!place?.id && !place?.name) {
+      return {
+        localizedName: input.storeNameKo,
+        localizedAddress: input.storeAddressKo,
+        koreanName: input.storeNameKo,
+        koreanAddress: input.storeAddressKo,
+      };
+    }
+    const details = await getGooglePlaceDetails(
+      apiKey,
+      place.name || place.id || "",
+      input.language
+    );
+    const localizedName =
+      details.displayName?.text || place.displayName?.text || input.storeNameKo;
+    const localizedAddress =
+      details.formattedAddress || place.formattedAddress || input.storeAddressKo;
+    return {
+      localizedName,
+      localizedAddress,
+      koreanName: input.storeNameKo,
+      koreanAddress: input.storeAddressKo,
+    };
+  } catch {
+    return {
+      localizedName: input.storeNameKo,
+      localizedAddress: input.storeAddressKo,
+      koreanName: input.storeNameKo,
+      koreanAddress: input.storeAddressKo,
+    };
+  }
 }
 
 async function deleteExpiredSnapshot(
@@ -1507,8 +1694,12 @@ function getLatestReviewWrittenAt(
   return latestIso;
 }
 
-export async function getStoreDetail(id: number, options?: { forceGoogle?: boolean }) {
+export async function getStoreDetail(
+  id: number,
+  options?: { forceGoogle?: boolean; language?: AppLanguage }
+) {
   const forceGoogle = options?.forceGoogle === true;
+  const language = normalizeAppLanguage(options?.language);
   // Try to get cached snapshot first
   const cachedSnapshot = await getStoreDetailSnapshot(id);
   
@@ -1536,11 +1727,12 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
   // If we have a valid cached snapshot and force sync is off, use cache.
   if (cachedSnapshot && !forceGoogle && Array.isArray(cachedSnapshot.latestGoogleReviews)) {
     const latestGoogleReviews =
-      cachedSnapshot.latestGoogleReviews.length > 0
+      language === "ko" && cachedSnapshot.latestGoogleReviews.length > 0
         ? cachedSnapshot.latestGoogleReviews
         : await loadLatestGoogleReviewsForStore({
             name: cachedSnapshot.store.name,
             address: cachedSnapshot.store.address,
+            language,
             fallback: cachedSnapshot.latestGoogleReviews,
           });
     const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
@@ -1555,6 +1747,11 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
     );
     return {
       ...cachedSnapshot,
+      localizedStore: await localizeStoreNameAndAddress({
+        storeNameKo: cachedSnapshot.store.name,
+        storeAddressKo: cachedSnapshot.store.address,
+        language,
+      }),
       aiReviewSummary: aiReviewSummaryText,
       aiAdSuspectPercent,
       latestGoogleReviews,
@@ -1626,7 +1823,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
       return await findGooglePlaceForStore(apiKey, {
         name: normalizedStore.name,
         address: normalizedStore.address,
-      });
+      }, language);
     } catch (error) {
       console.error("Failed to fetch google place:", error);
       return null;
@@ -1636,6 +1833,7 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
   const latestGoogleReviews = await loadLatestGoogleReviewsForStore({
     name: normalizedStore.name,
     address: normalizedStore.address,
+    language,
   });
   const aiReviewSummary = cachedSnapshot?.aiReviewSummary ?? null;
   const aiAdSuspectPercent =
@@ -1721,19 +1919,27 @@ export async function getStoreDetail(id: number, options?: { forceGoogle?: boole
   
   // Save snapshot asynchronously (fire-and-forget pattern)
   // Error handling is done inside saveStoreDetailSnapshot, cache failures won't break the response
-  saveStoreDetailSnapshot(id, snapshot);
+  if (language === "ko") {
+    saveStoreDetailSnapshot(id, snapshot);
+  }
 
   return {
     ...snapshot,
+    localizedStore: await localizeStoreNameAndAddress({
+      storeNameKo: normalizedStore.name,
+      storeAddressKo: normalizedStore.address,
+      language,
+    }),
     reviews: reviewsWithAuthorStats, // Include fresh reviews in response
   };
 }
 
 export async function getStoreAiSummary(
   id: number,
-  options?: { forceRefresh?: boolean }
+  options?: { forceRefresh?: boolean; language?: AppLanguage }
 ) {
   const forceRefresh = options?.forceRefresh === true;
+  const language = normalizeAppLanguage(options?.language);
   const cachedSummary = await loadAiSummaryCache(id);
   const cachedSnapshot = await getStoreDetailSnapshot(id);
   if (
@@ -1743,8 +1949,33 @@ export async function getStoreAiSummary(
     cachedSummary.summaryText
   ) {
     const fallbackAd = fallbackAdSuspectPercentFromSummary(cachedSnapshot?.summary);
+    const baseSummaryText = cachedSummary.summaryText;
+    if (language === "ko" || !baseSummaryText) {
+      return {
+        aiReviewSummary: baseSummaryText,
+        aiAdSuspectPercent: cachedSummary.adSuspectPercent ?? fallbackAd,
+      };
+    }
+    const fromMemory = getTranslatedAiSummaryFromMemoryCache(id, language);
+    if (fromMemory) {
+      return {
+        aiReviewSummary: fromMemory,
+        aiAdSuspectPercent: cachedSummary.adSuspectPercent ?? fallbackAd,
+      };
+    }
+    const translated = await translateTextWithGemini({
+      text: baseSummaryText,
+      targetLanguage: language,
+    });
+    if (translated) {
+      setTranslatedAiSummaryToMemoryCache(id, language, translated);
+      return {
+        aiReviewSummary: translated,
+        aiAdSuspectPercent: cachedSummary.adSuspectPercent ?? fallbackAd,
+      };
+    }
     return {
-      aiReviewSummary: cachedSummary.summaryText,
+      aiReviewSummary: baseSummaryText,
       aiAdSuspectPercent: cachedSummary.adSuspectPercent ?? fallbackAd,
     };
   }
@@ -1783,6 +2014,7 @@ export async function getStoreAiSummary(
   const result = await summarizeLatestReviewsWithGemini({
     storeName,
     storeAddress,
+    outputLanguage: "ko",
   });
   if (!result) {
     const fallbackAd = fallbackAdSuspectPercentFromSummary(cachedSnapshot?.summary);
@@ -1810,8 +2042,21 @@ export async function getStoreAiSummary(
     void saveStoreDetailSnapshot(id, nextSnapshot);
   }
 
+  if (language === "ko") {
+    return {
+      aiReviewSummary: result.text,
+      aiAdSuspectPercent: result.adSuspectPercent,
+    };
+  }
+  const translated = await translateTextWithGemini({
+    text: result.text,
+    targetLanguage: language,
+  });
+  if (translated) {
+    setTranslatedAiSummaryToMemoryCache(id, language, translated);
+  }
   return {
-    aiReviewSummary: result.text,
+    aiReviewSummary: translated ?? result.text,
     aiAdSuspectPercent: result.adSuspectPercent,
   };
 }
@@ -2593,9 +2838,17 @@ function setCachedGooglePlace(cacheKey: string, place: GooglePlace | null): void
   });
 }
 
-async function findGooglePlaceForStore(apiKey: string, store: { name: string; address: string | null }) {
+async function findGooglePlaceForStore(
+  apiKey: string,
+  store: { name: string; address: string | null },
+  language: AppLanguage = "ko"
+) {
   // Use JSON.stringify for cache key to avoid delimiter collisions
-  const cacheKey = JSON.stringify({ name: store.name, address: store.address ?? "" });
+  const cacheKey = JSON.stringify({
+    name: store.name,
+    address: store.address ?? "",
+    language,
+  });
   
   // Check cache first
   const cached = getCachedGooglePlace(cacheKey);
@@ -2606,7 +2859,7 @@ async function findGooglePlaceForStore(apiKey: string, store: { name: string; ad
   const query = `${store.name} ${store.address ?? ""}`.trim();
   const strictPayload = {
     textQuery: query,
-    languageCode: "ko",
+    languageCode: appLanguageToGoogleLanguageCode(language),
     regionCode: "KR",
     maxResultCount: 1,
     includedType: inferStoreCategoryByName(store.name),
@@ -2641,7 +2894,7 @@ async function findGooglePlaceForStore(apiKey: string, store: { name: string; ad
         },
         body: JSON.stringify({
           textQuery: query,
-          languageCode: "ko",
+          languageCode: appLanguageToGoogleLanguageCode(language),
           regionCode: "KR",
           maxResultCount: 1,
         }),
@@ -3397,7 +3650,7 @@ async function loadNearbyStoresFromDb(
 
 export async function getNearbyRecommendedStoresByLocation(
   location: { latitude: number; longitude: number },
-  options?: { limit?: number; minDbCount?: number; radiusKm?: number }
+  options?: { limit?: number; minDbCount?: number; radiusKm?: number; keyword?: string }
 ) {
   const limit =
     typeof options?.limit === "number" && Number.isFinite(options.limit)
@@ -3411,10 +3664,14 @@ export async function getNearbyRecommendedStoresByLocation(
     typeof options?.radiusKm === "number" && Number.isFinite(options.radiusKm)
       ? Math.max(0.5, Math.min(5, options.radiusKm))
       : 1;
+  const keyword = typeof options?.keyword === "string" ? options.keyword.trim() : "";
 
   let nearbyStores = await loadNearbyStoresFromDb(location, radiusKm);
   if (nearbyStores.length < minDbCount) {
     nearbyStores = await loadNearbyStoresFromDb(location, Math.max(radiusKm, 1.5));
+  }
+  if (keyword) {
+    nearbyStores = nearbyStores.filter((store) => doesStoreMatchFoodKeyword(store, keyword));
   }
 
   const enriched = await enrichStoresWithSummary(nearbyStores);
@@ -3793,13 +4050,19 @@ export async function dedupeStoresByNormalizedNameAddress(options?: {
   };
 }
 
-async function getGooglePlaceDetails(apiKey: string, placeResourceOrId: string) {
+async function getGooglePlaceDetails(
+  apiKey: string,
+  placeResourceOrId: string,
+  language: AppLanguage = "ko"
+) {
   const placePath = placeResourceOrId.startsWith("places/")
     ? placeResourceOrId
     : `places/${placeResourceOrId}`;
 
   return fetchGoogleJsonWithRetry<GooglePlaceDetailsResponse>(
-    `https://places.googleapis.com/v1/${placePath}?languageCode=ko&regionCode=KR`,
+    `https://places.googleapis.com/v1/${placePath}?languageCode=${encodeURIComponent(
+      appLanguageToGoogleLanguageCode(language)
+    )}&regionCode=KR`,
     {
       method: "GET",
       headers: {
@@ -3810,12 +4073,16 @@ async function getGooglePlaceDetails(apiKey: string, placeResourceOrId: string) 
   );
 }
 
-async function getLatestGoogleReviewsFromLegacy(apiKey: string, placeId: string) {
+async function getLatestGoogleReviewsFromLegacy(
+  apiKey: string,
+  placeId: string,
+  language: AppLanguage = "ko"
+) {
   const url = new URL("https://maps.googleapis.com/maps/api/place/details/json");
   url.searchParams.set("place_id", placeId);
   url.searchParams.set("fields", "reviews");
   url.searchParams.set("reviews_sort", "newest");
-  url.searchParams.set("language", "ko");
+  url.searchParams.set("language", appLanguageToGoogleLanguageCode(language));
   url.searchParams.set("key", apiKey);
 
   const response = await fetch(url.toString(), { method: "GET", cache: "no-store" });
@@ -3865,6 +4132,7 @@ async function getLatestGoogleReviewsFromLegacy(apiKey: string, placeId: string)
 async function loadLatestGoogleReviewsForStore(input: {
   name: string;
   address: string | null;
+  language?: AppLanguage;
   fallback?: StoreDetailSnapshot["latestGoogleReviews"];
 }) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
@@ -3874,9 +4142,9 @@ async function loadLatestGoogleReviewsForStore(input: {
     const place = await findGooglePlaceForStore(apiKey, {
       name: input.name,
       address: input.address,
-    });
+    }, input.language ?? "ko");
     if (!place?.id) return input.fallback ?? [];
-    return await getLatestGoogleReviewsFromLegacy(apiKey, place.id);
+    return await getLatestGoogleReviewsFromLegacy(apiKey, place.id, input.language ?? "ko");
   } catch (error) {
     console.error("Failed to fetch latest google reviews:", error);
     return input.fallback ?? [];
@@ -4191,7 +4459,12 @@ async function saveGoogleReviewCache(storeId: number, payload: GoogleReviewAiRes
 
 export async function getGoogleReviewsWithAiForStore(
   storeId: number,
-  options?: { maxReviews?: number; forceRefresh?: boolean; maxAgeHours?: number }
+  options?: {
+    maxReviews?: number;
+    forceRefresh?: boolean;
+    maxAgeHours?: number;
+    language?: AppLanguage;
+  }
 ) {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
@@ -4203,12 +4476,13 @@ export async function getGoogleReviewsWithAiForStore(
       ? Math.max(1, Math.min(5, Math.floor(options.maxReviews)))
       : 5;
   const forceRefresh = Boolean(options?.forceRefresh);
+  const language = normalizeAppLanguage(options?.language);
   const maxAgeHours =
     typeof options?.maxAgeHours === "number" && Number.isFinite(options.maxAgeHours)
       ? Math.max(1, Math.min(24 * 365, Math.floor(options.maxAgeHours)))
       : 24 * 7;
 
-  if (!forceRefresh) {
+  if (!forceRefresh && language === "ko") {
     const cached = await loadGoogleReviewCache(storeId);
     if (cached?.payload) {
       const updatedAtMs = cached.updatedAt ? new Date(cached.updatedAt).getTime() : 0;
@@ -4236,7 +4510,7 @@ export async function getGoogleReviewsWithAiForStore(
     address: typeof (store as { address: unknown }).address === "string"
       ? (store as { address: string }).address
       : null,
-  });
+  }, language);
   if (!place) {
     const noPlaceResult: GoogleReviewAiResult = {
       found: false,
@@ -4254,11 +4528,13 @@ export async function getGoogleReviewsWithAiForStore(
       },
       reviews: [],
     };
-    await saveGoogleReviewCache(storeId, noPlaceResult);
+    if (language === "ko") {
+      await saveGoogleReviewCache(storeId, noPlaceResult);
+    }
     return noPlaceResult;
   }
 
-  const details = await getGooglePlaceDetails(apiKey, place.name || place.id || "");
+  const details = await getGooglePlaceDetails(apiKey, place.name || place.id || "", language);
   const newRows = (details.reviews ?? []).map((review) => ({
     authorName: review.authorAttribution?.displayName || null,
     rating:
@@ -4344,7 +4620,9 @@ export async function getGoogleReviewsWithAiForStore(
     reviews: analyzed.filter((review) => review.content.trim() !== ""),
   };
 
-  await saveGoogleReviewCache(storeId, result);
+  if (language === "ko") {
+    await saveGoogleReviewCache(storeId, result);
+  }
   return result;
 }
 

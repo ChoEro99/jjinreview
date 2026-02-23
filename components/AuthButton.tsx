@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
+import { appLanguageToLocale } from "@/src/lib/language";
+import { useAppLanguageClient } from "@/src/lib/app-language-client";
 
 const MAX_DISPLAY_NAME_LENGTH = 10;
 const MY_REVIEWS_CACHE_TTL_MS = 45_000;
@@ -35,6 +37,7 @@ const LABEL_MAP: Record<Exclude<OptionValue, null>, string> = {
 
 export default function AuthButton() {
   const { data: session } = useSession();
+  const { language } = useAppLanguageClient();
   const [isMobile, setIsMobile] = useState(false);
   const [myReviewsOpen, setMyReviewsOpen] = useState(false);
   const [myReviews, setMyReviews] = useState<MyReview[]>([]);
@@ -52,6 +55,50 @@ export default function AuthButton() {
     moved: false,
   });
   const wheelLockRef = useRef(false);
+  const locale = appLanguageToLocale(language);
+  const text = language === "ko"
+    ? {
+        myReviews: "내가쓴 리뷰",
+        logout: "로그아웃",
+        login: "구글로 로그인",
+        myReviewTitle: "내가 쓴 리뷰",
+        loadingMyReviews: "내 리뷰 불러오는 중...",
+        noMyReview: "작성한 리뷰가 아직 없습니다.",
+        anonymous: "익명",
+        noOption: "선택 항목 없음",
+      }
+    : language === "ja"
+      ? {
+          myReviews: "マイレビュー",
+          logout: "ログアウト",
+          login: "Googleログイン",
+          myReviewTitle: "自分のレビュー",
+          loadingMyReviews: "レビューを読み込み中...",
+          noMyReview: "まだ投稿したレビューがありません。",
+          anonymous: "匿名",
+          noOption: "選択項目なし",
+        }
+      : language === "zh-CN"
+        ? {
+            myReviews: "我的点评",
+            logout: "退出登录",
+            login: "Google 登录",
+            myReviewTitle: "我写的点评",
+            loadingMyReviews: "正在加载我的点评...",
+            noMyReview: "还没有已发布的点评。",
+            anonymous: "匿名",
+            noOption: "无已选项",
+          }
+        : {
+            myReviews: "My Reviews",
+            logout: "Log out",
+            login: "Sign in with Google",
+            myReviewTitle: "My Reviews",
+            loadingMyReviews: "Loading my reviews...",
+            noMyReview: "No reviews yet.",
+            anonymous: "Anonymous",
+            noOption: "No options selected",
+          };
 
   useEffect(() => {
     const onResize = () => {
@@ -244,7 +291,7 @@ export default function AuthButton() {
             e.currentTarget.style.borderColor = "#47682C";
           }}
         >
-          내가쓴 리뷰
+          {text.myReviews}
         </button>
         <button
           onClick={() => signOut()}
@@ -269,7 +316,7 @@ export default function AuthButton() {
             e.currentTarget.style.color = "#28502E";
           }}
         >
-          로그아웃
+          {text.logout}
         </button>
         {myReviewsOpen && (
           <div
@@ -300,7 +347,7 @@ export default function AuthButton() {
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <strong style={{ fontSize: 18 }}>내가 쓴 리뷰</strong>
+                <strong style={{ fontSize: 18 }}>{text.myReviewTitle}</strong>
                 <button
                   type="button"
                   onClick={() => setMyReviewsOpen(false)}
@@ -319,7 +366,7 @@ export default function AuthButton() {
 
               {isLoadingMyReviews ? (
                 <div style={{ padding: "28px 8px", textAlign: "center", color: "#8C7051" }}>
-                  내 리뷰 불러오는 중...
+                  {text.loadingMyReviews}
                 </div>
               ) : myReviewsError ? (
                 <div style={{ padding: "20px 8px", textAlign: "center", color: "#7A2A19" }}>
@@ -327,7 +374,7 @@ export default function AuthButton() {
                 </div>
               ) : myReviews.length === 0 ? (
                 <div style={{ padding: "20px 8px", textAlign: "center", color: "#8C7051" }}>
-                  작성한 리뷰가 아직 없습니다.
+                  {text.noMyReview}
                 </div>
               ) : (
                 <>
@@ -406,7 +453,7 @@ export default function AuthButton() {
                                   review.waitTime ? `대기 ${LABEL_MAP[review.waitTime]}` : null,
                                 ]
                                   .filter(Boolean)
-                                  .join(" · ") || "선택 항목 없음"}
+                                  .join(" · ") || text.noOption}
                               </div>
                               {review.comment && (
                                 <div style={{ fontSize: 14, lineHeight: 1.45, marginBottom: 6 }}>
@@ -414,12 +461,12 @@ export default function AuthButton() {
                                 </div>
                               )}
                               <div style={{ fontSize: 12, color: "#8C7051" }}>
-                                {new Date(review.createdAt).toLocaleString("ko-KR")}
+                                {new Date(review.createdAt).toLocaleString(locale)}
                               </div>
                             </>
                           ) : (
                             <div style={{ fontSize: 12, color: "#8C7051" }}>
-                              {new Date(review.createdAt).toLocaleDateString("ko-KR")}
+                              {new Date(review.createdAt).toLocaleDateString(locale)}
                             </div>
                           )}
                         </div>
@@ -503,7 +550,7 @@ export default function AuthButton() {
           e.currentTarget.style.color = "#28502E";
         }}
       >
-        구글로 로그인
+        {text.login}
       </button>
     </div>
   );
