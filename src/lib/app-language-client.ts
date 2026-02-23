@@ -32,9 +32,12 @@ export function setAppLanguageClient(language: AppLanguage) {
 }
 
 export function useAppLanguageClient() {
-  const [language, setLanguageState] = useState<AppLanguage>(() => getAppLanguageClient());
+  // Keep first render deterministic between SSR and hydration.
+  const [language, setLanguageState] = useState<AppLanguage>("ko");
 
   useEffect(() => {
+    setLanguageState(getAppLanguageClient());
+
     const onStorage = (event: StorageEvent) => {
       if (event.key !== APP_LANGUAGE_STORAGE_KEY) return;
       setLanguageState(getAppLanguageClient());
