@@ -332,6 +332,8 @@ const HomeInteractive = ({
         mapOpen: "Open map",
         reviewWrite: "Write Review",
         reviewWriteClose: "Close Review",
+        firstReviewHint: "No app reviews yet",
+        firstReviewAction: "Write the first review",
         aiSummary: "AI Review Summary",
         aiSummaryEmpty: "AI summary is not ready yet.",
         latestReview: "Latest Reviews",
@@ -375,6 +377,8 @@ const HomeInteractive = ({
         mapOpen: "地図で見る",
         reviewWrite: "レビュー作成",
         reviewWriteClose: "レビュー作成を閉じる",
+        firstReviewHint: "アプリレビューはまだありません",
+        firstReviewAction: "最初のレビューを書く",
         aiSummary: "AIレビュー要約",
         aiSummaryEmpty: "AIレビュー要約はまだ準備中です。",
         latestReview: "最新レビュー",
@@ -418,6 +422,8 @@ const HomeInteractive = ({
         mapOpen: "在地图中查看",
         reviewWrite: "写点评",
         reviewWriteClose: "关闭写点评",
+        firstReviewHint: "暂无应用内点评",
+        firstReviewAction: "写第一条点评",
         aiSummary: "AI 评论摘要",
         aiSummaryEmpty: "AI 评论摘要暂未准备好。",
         latestReview: "最新评论",
@@ -460,6 +466,8 @@ const HomeInteractive = ({
       mapOpen: "지도에서 보기",
       reviewWrite: "리뷰 작성",
       reviewWriteClose: "리뷰 작성 닫기",
+      firstReviewHint: "아직 앱 리뷰가 없어요",
+      firstReviewAction: "★ 첫 리뷰를 남겨보세요",
       aiSummary: "AI 리뷰 요약",
       aiSummaryEmpty: "AI 리뷰 요약을 아직 준비하지 못했어요.",
       latestReview: "최근 리뷰",
@@ -1267,6 +1275,21 @@ const HomeInteractive = ({
     });
   }, []);
 
+  const openReviewFormForStore = useCallback(
+    async (storeId: number) => {
+      if (selectedStoreIdRef.current !== storeId) {
+        await handleStoreClick(storeId);
+      }
+      setIsReviewFormOpen(true);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          scrollToReviewForm();
+        });
+      });
+    },
+    [handleStoreClick, scrollToReviewForm]
+  );
+
   const handleReviewWriteClick = useCallback(() => {
     if (isReviewFormOpen) {
       setIsReviewFormOpen(false);
@@ -1485,12 +1508,18 @@ const HomeInteractive = ({
                         {store.signatureDish ? `${uiText.signatureDish}: ${store.signatureDish}` : ""}
                       </div>
                     )}
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12, alignItems: "center" }}>
                       <span style={{ color: "#28502E" }}>
                         ⭐ {store.summary.weightedRating?.toFixed(1) ?? "-"} ({formatCountWithUnit(externalCount, uiText.countUnit)})
                       </span>
                       <span style={{ color: "#47682C", fontWeight: 700 }}>
-                        ★ {uiText.appScore} {store.summary.appAverageRating?.toFixed(1) ?? "-"} ({formatCountWithUnit(inappCount, uiText.countUnit)})
+                        {inappCount > 0 ? (
+                          <>★ {uiText.appScore} {store.summary.appAverageRating?.toFixed(1) ?? "-"} ({formatCountWithUnit(inappCount, uiText.countUnit)})</>
+                        ) : (
+                          <span style={{ color: "#8C7051", fontWeight: 700 }}>
+                            {uiText.firstReviewHint}
+                          </span>
+                        )}
                       </span>
                       <span style={{ color: "#28502E" }}>
                         {uiText.trustIndex} {totalReviewCount > 0 ? `${ratingTrust.emoji} ${localizeTrustLabel(ratingTrust.label, selectedLanguage)} (${ratingTrust.totalScore}${uiText.scoreUnit ? ` ${uiText.scoreUnit}` : ""})` : "-"}
@@ -1641,9 +1670,57 @@ const HomeInteractive = ({
                         <div style={{ fontSize: isMobile ? 34 : 44, fontWeight: 800, color: "#28502E", marginBottom: 4 }}>
                           ⭐ {storeDetail.insight.rating.toFixed(1)} <span style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, color: "#28502E" }}>({formatCountWithUnit(externalCount, uiText.countUnit)})</span>
                         </div>
-                        <div style={{ fontSize: isMobile ? 17 : 20, fontWeight: 800, color: "#47682C", marginBottom: 12 }}>
-                          ★ {uiText.appScore} {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"} <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 700, color: "#47682C" }}>({formatCountWithUnit(inappCount, uiText.countUnit)})</span>
-                        </div>
+                        {inappCount > 0 ? (
+                          <div style={{ fontSize: isMobile ? 17 : 20, fontWeight: 800, color: "#47682C", marginBottom: 12 }}>
+                            ★ {uiText.appScore} {storeDetail.summary.appAverageRating?.toFixed(1) ?? "-"} <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 700, color: "#47682C" }}>({formatCountWithUnit(inappCount, uiText.countUnit)})</span>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              flexWrap: "wrap",
+                              marginBottom: 12,
+                            }}
+                          >
+                            <div style={{ fontSize: isMobile ? 14 : 15, color: "#8C7051", fontWeight: 700 }}>
+                              {uiText.firstReviewHint}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsReviewFormOpen(true);
+                                requestAnimationFrame(() => {
+                                  requestAnimationFrame(() => {
+                                    scrollToReviewForm();
+                                  });
+                                });
+                              }}
+                              style={{
+                                border: "1px solid rgba(40, 80, 46, 0.5)",
+                                background: "rgba(71, 104, 44, 0.12)",
+                                color: "#28502E",
+                                borderRadius: 8,
+                                padding: isMobile ? "6px 10px" : "7px 12px",
+                                fontSize: isMobile ? 13 : 14,
+                                fontWeight: 800,
+                                cursor: "pointer",
+                                transition: "all 0.2s ease",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "rgba(71, 104, 44, 0.22)";
+                                e.currentTarget.style.borderColor = "rgba(40, 80, 46, 0.8)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "rgba(71, 104, 44, 0.12)";
+                                e.currentTarget.style.borderColor = "rgba(40, 80, 46, 0.5)";
+                              }}
+                            >
+                              {uiText.firstReviewAction}
+                            </button>
+                          </div>
+                        )}
                       </>
                     )}
 
