@@ -130,3 +130,140 @@ create index if not exists idx_user_reviews_created_at on public.user_reviews(cr
 create extension if not exists pg_trgm;
 create index if not exists idx_stores_name_trgm on public.stores using gin (lower(name) gin_trgm_ops);
 create index if not exists idx_stores_address_trgm on public.stores using gin (lower(address) gin_trgm_ops);
+
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_stores_updated_at on public.stores;
+create trigger trg_stores_updated_at
+before update on public.stores
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists trg_reviews_updated_at on public.reviews;
+create trigger trg_reviews_updated_at
+before update on public.reviews
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists trg_store_metrics_updated_at on public.store_metrics;
+create trigger trg_store_metrics_updated_at
+before update on public.store_metrics
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists trg_google_review_cache_updated_at on public.google_review_cache;
+create trigger trg_google_review_cache_updated_at
+before update on public.google_review_cache
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists trg_naver_signal_cache_updated_at on public.naver_signal_cache;
+create trigger trg_naver_signal_cache_updated_at
+before update on public.naver_signal_cache
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists trg_ai_review_summaries_updated_at on public.ai_review_summaries;
+create trigger trg_ai_review_summaries_updated_at
+before update on public.ai_review_summaries
+for each row
+execute function public.set_updated_at();
+
+alter table public.stores enable row level security;
+alter table public.reviews enable row level security;
+alter table public.review_analyses enable row level security;
+alter table public.store_metrics enable row level security;
+alter table public.google_review_cache enable row level security;
+alter table public.naver_signal_cache enable row level security;
+alter table public.ai_review_summaries enable row level security;
+alter table public.store_detail_snapshots enable row level security;
+alter table public.users enable row level security;
+alter table public.user_reviews enable row level security;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'stores'
+      and policyname = 'stores_read_public'
+  ) then
+    create policy stores_read_public on public.stores
+      for select
+      using (true);
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'reviews'
+      and policyname = 'reviews_read_public'
+  ) then
+    create policy reviews_read_public on public.reviews
+      for select
+      using (true);
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'review_analyses'
+      and policyname = 'review_analyses_read_public'
+  ) then
+    create policy review_analyses_read_public on public.review_analyses
+      for select
+      using (true);
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'store_metrics'
+      and policyname = 'store_metrics_read_public'
+  ) then
+    create policy store_metrics_read_public on public.store_metrics
+      for select
+      using (true);
+  end if;
+end
+$$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'ai_review_summaries'
+      and policyname = 'ai_review_summaries_read_public'
+  ) then
+    create policy ai_review_summaries_read_public on public.ai_review_summaries
+      for select
+      using (true);
+  end if;
+end
+$$;

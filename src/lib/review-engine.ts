@@ -63,6 +63,32 @@ const DETAIL_WORDS = [
 const POSITIVE_WORDS = ["친절", "맛있", "추천", "만족", "좋", "great", "good"];
 const NEGATIVE_WORDS = ["불친절", "별로", "실망", "최악", "나쁘", "bad", "worst"];
 
+type KeywordOverrideKey =
+  | "AD_KEYWORDS"
+  | "CTA_KEYWORDS"
+  | "DETAIL_WORDS"
+  | "POSITIVE_WORDS"
+  | "NEGATIVE_WORDS";
+
+function parseKeywordOverride(name: KeywordOverrideKey, fallback: string[]) {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = raw
+    .split(",")
+    .map((v) => v.trim().toLowerCase())
+    .filter((v) => v.length > 0);
+  return parsed.length ? parsed : fallback;
+}
+
+const EFFECTIVE_AD_KEYWORDS = parseKeywordOverride("AD_KEYWORDS", AD_KEYWORDS);
+const EFFECTIVE_CTA_KEYWORDS = parseKeywordOverride("CTA_KEYWORDS", CTA_KEYWORDS);
+const EFFECTIVE_DETAIL_WORDS = parseKeywordOverride("DETAIL_WORDS", DETAIL_WORDS);
+const EFFECTIVE_POSITIVE_WORDS = parseKeywordOverride("POSITIVE_WORDS", POSITIVE_WORDS);
+const EFFECTIVE_NEGATIVE_WORDS = parseKeywordOverride("NEGATIVE_WORDS", NEGATIVE_WORDS);
+const LINK_PATTERN = /(https?:\/\/|www\.|bit\.ly|linktr\.ee|open\.kakao)/;
+const HASHTAG_PATTERN = /#[\w\u3131-\uD79D]+/g;
+const REPEATED_CHARS_PATTERN = /(.)\1{4,}/;
+
 // Fallback policy aligned with LLM rubric:
 // - adRisk: marketing-like language/signals
 // - lowQualityRisk: weak evidence / spam-like writing
@@ -83,7 +109,7 @@ function includesAny(text: string, keywords: string[]) {
 }
 
 function countHashtags(text: string) {
-  const matches = text.match(/#[\w\u3131-\uD79D]+/g);
+  const matches = text.match(HASHTAG_PATTERN);
   return matches?.length ?? 0;
 }
 
@@ -104,15 +130,15 @@ export function heuristicAnalyzeReview(input: AnalyzeInput): ReviewAnalysis {
 
   const signals: string[] = [];
 
-  const hasAdKeyword = includesAny(text, AD_KEYWORDS);
-  const hasCtaKeyword = includesAny(text, CTA_KEYWORDS);
-  const hasDetailWord = includesAny(text, DETAIL_WORDS);
-  const hasPositiveWord = includesAny(text, POSITIVE_WORDS);
-  const hasNegativeWord = includesAny(text, NEGATIVE_WORDS);
-  const hasLink = /(https?:\/\/|www\.|bit\.ly|linktr\.ee|open\.kakao)/.test(text);
+  const hasAdKeyword = includesAny(text, EFFECTIVE_AD_KEYWORDS);
+  const hasCtaKeyword = includesAny(text, EFFECTIVE_CTA_KEYWORDS);
+  const hasDetailWord = includesAny(text, EFFECTIVE_DETAIL_WORDS);
+  const hasPositiveWord = includesAny(text, EFFECTIVE_POSITIVE_WORDS);
+  const hasNegativeWord = includesAny(text, EFFECTIVE_NEGATIVE_WORDS);
+  const hasLink = LINK_PATTERN.test(text);
   const hashtagCount = countHashtags(text);
   const shortText = text.length < 20;
-  const repeatedChars = /(.)\1{4,}/.test(text);
+  const repeatedChars = REPEATED_CHARS_PATTERN.test(text);
 
   const ratingMismatch =
     (rating >= 4 && hasNegativeWord && !hasPositiveWord) ||

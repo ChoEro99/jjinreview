@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
 import "./globals.css";
 import Providers from "./providers";
 import AuthButton from "@/components/AuthButton";
 import LoginPromptModal from "@/components/LoginPromptModal";
+import FooterLinks from "@/components/FooterLinks";
 import { getSiteUrl } from "@/src/lib/site-url";
 
 const geistSans = Geist({
@@ -23,6 +23,12 @@ export const metadata: Metadata = {
   title: "리뷰랩",
   description: "이 평점 믿어도 될까? AI가 분석해주는 평점 믿음 수치",
   metadataBase: new URL(getSiteUrl()),
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -45,19 +51,7 @@ export default function RootLayout({
           <LoginPromptModal />
           {children}
           <footer className="border-t border-[#c9b99e] bg-[rgba(71,104,44,0.06)] px-4 py-3 text-xs text-[#6f5c44]">
-            <div className="mx-auto flex w-full max-w-5xl flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-              <a href="mailto:color0230@gmail.com" className="hover:underline">
-                문의: color0230@gmail.com
-              </a>
-              <div className="flex items-center gap-4">
-                <Link href="/terms" className="hover:underline">
-                  이용약관
-                </Link>
-                <Link href="/privacy" className="hover:underline">
-                  개인정보처리방침
-                </Link>
-              </div>
-            </div>
+            <FooterLinks />
           </footer>
         </Providers>
       </body>

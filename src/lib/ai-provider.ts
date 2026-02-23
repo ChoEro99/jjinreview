@@ -30,6 +30,38 @@ export type ReviewSummaryResult = {
   model: string;
 };
 
+const REVIEW_ANALYSIS_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    adRisk: { type: "NUMBER" },
+    undisclosedAdRisk: { type: "NUMBER" },
+    lowQualityRisk: { type: "NUMBER" },
+    trustScore: { type: "NUMBER" },
+    confidence: { type: "NUMBER" },
+    signals: {
+      type: "ARRAY",
+      items: { type: "STRING" },
+    },
+    reasonSummary: { type: "STRING" },
+  },
+  required: [
+    "adRisk",
+    "undisclosedAdRisk",
+    "lowQualityRisk",
+    "trustScore",
+    "confidence",
+    "signals",
+    "reasonSummary",
+  ],
+} as const;
+
+async function logHttpError(tag: string, response: Response) {
+  const errorBody = await response.text().catch(() => "");
+  const bodyPreview =
+    errorBody.length > 1000 ? `${errorBody.slice(0, 1000)}...[truncated]` : errorBody;
+  console.error(`[${tag}] ${response.status} ${response.statusText}: ${bodyPreview}`);
+}
+
 export async function translateTextWithGemini(input: {
   text: string;
   targetLanguage: "ko" | "en" | "ja" | "zh-CN";
@@ -68,7 +100,10 @@ export async function translateTextWithGemini(input: {
       }),
     }
   );
-  if (!response.ok) return null;
+  if (!response.ok) {
+    await logHttpError("Gemini Translation Error", response);
+    return null;
+  }
   const json = (await response.json()) as {
     candidates?: Array<{
       content?: {
@@ -158,6 +193,7 @@ async function analyzeWithGemini(input: ProviderInput): Promise<ProviderResult |
         ],
         generationConfig: {
           responseMimeType: "application/json",
+          responseSchema: REVIEW_ANALYSIS_SCHEMA,
           temperature: 0,
           topP: 0,
         },
@@ -165,7 +201,10 @@ async function analyzeWithGemini(input: ProviderInput): Promise<ProviderResult |
     }
   );
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    await logHttpError("Gemini Review Analyze Error", response);
+    return null;
+  }
   const json = (await response.json()) as {
     candidates?: Array<{
       content?: {
@@ -179,7 +218,13 @@ async function analyzeWithGemini(input: ProviderInput): Promise<ProviderResult |
 
   const jsonText = extractJsonObject(text);
   if (!jsonText) return null;
-  const parsed = JSON.parse(jsonText) as Record<string, unknown>;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(jsonText) as Record<string, unknown>;
+  } catch (error) {
+    console.error("[Gemini Review Analyze Parse Error]", error, { text });
+    return null;
+  }
 
   return {
     analysis: normalizeAnalysisPayload(parsed),
@@ -254,11 +299,22 @@ async function analyzeWithOpenAI(input: ProviderInput): Promise<ProviderResult |
     }),
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    await logHttpError("OpenAI Review Analyze Error", response);
+    return null;
+  }
   const json = (await response.json()) as { output_text?: string };
   if (!json.output_text) return null;
 
-  const parsed = JSON.parse(json.output_text) as Record<string, unknown>;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(json.output_text) as Record<string, unknown>;
+  } catch (error) {
+    console.error("[OpenAI Review Analyze Parse Error]", error, {
+      outputText: json.output_text,
+    });
+    return null;
+  }
   return {
     analysis: normalizeAnalysisPayload(parsed),
     meta: {
@@ -356,7 +412,10 @@ export async function summarizeLatestReviewsWithGemini(
     }
   );
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    await logHttpError("Gemini Review Summary Error", response);
+    return null;
+  }
   const json = (await response.json()) as {
     candidates?: Array<{
       content?: {
