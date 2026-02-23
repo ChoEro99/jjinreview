@@ -15,6 +15,7 @@ import {
   appLanguageToGoogleLanguageCode,
   normalizeAppLanguage,
 } from "@/src/lib/language";
+import { createHash } from "node:crypto";
 
 export type StoreBase = {
   id: number;
@@ -1427,6 +1428,14 @@ const translatedAiSummaryMemoryCache = new Map<
   string,
   { translatedText: string; createdAtMs: number }
 >();
+const APP_REVIEW_TRANSLATION_LIMIT = 40;
+const localizedContentWarmInFlight = new Set<string>();
+
+type LocalizedContentKey = "ai_summary" | "latest_google_reviews" | "app_reviews";
+type LocalizedCachePayload = {
+  sourceHash: string;
+  value: unknown;
+};
 
 function translatedSummaryCacheKey(storeId: number, language: AppLanguage) {
   return `${storeId}:${language}`;
@@ -1453,6 +1462,268 @@ function setTranslatedAiSummaryToMemoryCache(
     translatedText,
     createdAtMs: Date.now(),
   });
+}
+
+function sha1Text(value: string) {
+  return createHash("sha1").update(value).digest("hex");
+}
+
+function buildAiSummaryHash(summaryText: string | null) {
+  return sha1Text(summaryText ?? "");
+}
+
+function buildLatestGoogleReviewsHash(
+  reviews: StoreDetailSnapshot["latestGoogleReviews"]
+) {
+  const base = reviews.map((row) => ({
+    publishedAt: row.publishedAt,
+    rating: row.rating,
+    content: row.content,
+    relativePublishedTime: row.relativePublishedTime,
+  }));
+  return sha1Text(JSON.stringify(base));
+}
+
+function buildAppReviewsHash<T extends { id: number; createdAt: string; content: string; latestAnalysis: { reasonSummary: string } | null }>(
+  reviews: T[]
+) {
+  const base = reviews.slice(0, APP_REVIEW_TRANSLATION_LIMIT).map((row) => ({
+    id: row.id,
+    createdAt: row.createdAt,
+    content: row.content,
+    reasonSummary: row.latestAnalysis?.reasonSummary ?? null,
+  }));
+  return sha1Text(JSON.stringify(base));
+}
+
+async function loadLocalizedContentCache(
+  storeId: number,
+  language: AppLanguage,
+  key: LocalizedContentKey
+): Promise<LocalizedCachePayload | null> {
+  const sb = supabaseServer();
+  const { data, error } = await sb
+    .from("localized_content_cache")
+    .select("payload, updated_at")
+    .eq("store_id", storeId)
+    .eq("language", language)
+    .eq("content_key", key)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingTableError(error)) return null;
+    throw new Error(error.message);
+  }
+  if (!data) return null;
+
+  const updatedAt =
+    typeof (data as { updated_at?: unknown }).updated_at === "string"
+      ? ((data as { updated_at: string }).updated_at as string)
+      : null;
+  const ageMs = updatedAt ? Date.now() - new Date(updatedAt).getTime() : Number.POSITIVE_INFINITY;
+  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > AI_SUMMARY_TTL_MS) {
+    return null;
+  }
+
+  const payload = (data as { payload?: unknown }).payload;
+  if (!payload || typeof payload !== "object") return null;
+  const row = payload as Record<string, unknown>;
+  if (typeof row.sourceHash !== "string") return null;
+  return {
+    sourceHash: row.sourceHash,
+    value: row.value,
+  };
+}
+
+async function saveLocalizedContentCache(
+  storeId: number,
+  language: AppLanguage,
+  key: LocalizedContentKey,
+  payload: LocalizedCachePayload
+) {
+  const sb = supabaseServer();
+  const { error } = await sb.from("localized_content_cache").upsert(
+    {
+      store_id: storeId,
+      language,
+      content_key: key,
+      payload,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "store_id,language,content_key" }
+  );
+  if (error && !isMissingTableError(error)) {
+    throw new Error(error.message);
+  }
+}
+
+async function translateLatestGoogleReviews(
+  reviews: StoreDetailSnapshot["latestGoogleReviews"],
+  language: AppLanguage
+) {
+  const translatedItems = await Promise.all(
+    reviews.map(async (row) => ({
+      content:
+        (await translateTextWithGemini({
+          text: row.content,
+          targetLanguage: language,
+        })) ?? row.content,
+    }))
+  );
+  return reviews.map((row, index) => ({
+    ...row,
+    content: translatedItems[index]?.content ?? row.content,
+  }));
+}
+
+async function translateAppReviews<T extends { content: string; latestAnalysis: { reasonSummary: string } | null }>(
+  reviews: T[],
+  language: AppLanguage
+) {
+  const target = reviews.slice(0, APP_REVIEW_TRANSLATION_LIMIT);
+  const translatedItems = await Promise.all(
+    target.map(async (row) => {
+      const translatedContent = await translateTextWithGemini({
+        text: row.content,
+        targetLanguage: language,
+      });
+      const translatedReason = row.latestAnalysis
+        ? await translateTextWithGemini({
+            text: row.latestAnalysis.reasonSummary,
+            targetLanguage: language,
+          })
+        : null;
+      return {
+        content: translatedContent ?? row.content,
+        reasonSummary: translatedReason ?? row.latestAnalysis?.reasonSummary ?? null,
+      };
+    })
+  );
+
+  return reviews.map((row, index) => {
+    const translated = translatedItems[index];
+    if (!translated) return row;
+    return {
+      ...row,
+      content: translated.content,
+      latestAnalysis: row.latestAnalysis
+        ? {
+            ...row.latestAnalysis,
+            reasonSummary: translated.reasonSummary ?? row.latestAnalysis.reasonSummary,
+          }
+        : row.latestAnalysis,
+    };
+  });
+}
+
+function tryReadCachedLatestGoogleReviews(
+  cached: LocalizedCachePayload | null,
+  expectedHash: string
+): StoreDetailSnapshot["latestGoogleReviews"] | null {
+  if (!cached || cached.sourceHash !== expectedHash) return null;
+  if (!Array.isArray(cached.value)) return null;
+  const rows = cached.value as Array<Record<string, unknown>>;
+  return rows
+    .map((row) => ({
+      authorName: typeof row.authorName === "string" ? row.authorName : null,
+      rating: toNumber(row.rating, 0) ?? 0,
+      content: typeof row.content === "string" ? row.content : "",
+      publishedAt: typeof row.publishedAt === "string" ? row.publishedAt : null,
+      relativePublishedTime:
+        typeof row.relativePublishedTime === "string" ? row.relativePublishedTime : null,
+    }))
+    .filter((row) => row.rating > 0 && row.content.length > 0);
+}
+
+function tryApplyCachedAppReviews<T extends { content: string; latestAnalysis: { reasonSummary: string } | null }>(
+  reviews: T[],
+  cached: LocalizedCachePayload | null,
+  expectedHash: string
+) {
+  if (!cached || cached.sourceHash !== expectedHash) return null;
+  if (!Array.isArray(cached.value)) return null;
+  const rows = cached.value as Array<Record<string, unknown>>;
+  return reviews.map((review, index) => {
+    if (index >= APP_REVIEW_TRANSLATION_LIMIT) return review;
+    const row = rows[index];
+    if (!row) return review;
+    const translatedContent =
+      typeof row.content === "string" && row.content.trim().length > 0 ? row.content : review.content;
+    const translatedReason =
+      typeof row.reasonSummary === "string" && row.reasonSummary.trim().length > 0
+        ? row.reasonSummary
+        : review.latestAnalysis?.reasonSummary ?? null;
+    return {
+      ...review,
+      content: translatedContent,
+      latestAnalysis: review.latestAnalysis
+        ? { ...review.latestAnalysis, reasonSummary: translatedReason ?? review.latestAnalysis.reasonSummary }
+        : review.latestAnalysis,
+    };
+  });
+}
+
+function warmLocalizedContentCache(input: {
+  storeId: number;
+  language: AppLanguage;
+  aiSummaryText: string | null;
+  latestGoogleReviews: StoreDetailSnapshot["latestGoogleReviews"];
+  appReviews: Array<{ id: number; createdAt: string; content: string; latestAnalysis: { reasonSummary: string } | null }>;
+  shouldWarmAiSummary: boolean;
+  shouldWarmLatestGoogleReviews: boolean;
+  shouldWarmAppReviews: boolean;
+}) {
+  if (input.language === "ko") return;
+  const warmKey = `${input.storeId}:${input.language}`;
+  if (localizedContentWarmInFlight.has(warmKey)) return;
+
+  localizedContentWarmInFlight.add(warmKey);
+  void (async () => {
+    try {
+      if (input.shouldWarmAiSummary && input.aiSummaryText) {
+        const translated = await translateTextWithGemini({
+          text: input.aiSummaryText,
+          targetLanguage: input.language,
+        });
+        if (translated) {
+          await saveLocalizedContentCache(input.storeId, input.language, "ai_summary", {
+            sourceHash: buildAiSummaryHash(input.aiSummaryText),
+            value: translated,
+          });
+          setTranslatedAiSummaryToMemoryCache(input.storeId, input.language, translated);
+        }
+      }
+
+      if (input.shouldWarmLatestGoogleReviews && input.latestGoogleReviews.length > 0) {
+        const translatedReviews = await translateLatestGoogleReviews(
+          input.latestGoogleReviews,
+          input.language
+        );
+        await saveLocalizedContentCache(input.storeId, input.language, "latest_google_reviews", {
+          sourceHash: buildLatestGoogleReviewsHash(input.latestGoogleReviews),
+          value: translatedReviews,
+        });
+      }
+
+      if (input.shouldWarmAppReviews && input.appReviews.length > 0) {
+        const translatedAppReviews = await translateAppReviews(input.appReviews, input.language);
+        const payloadRows = translatedAppReviews
+          .slice(0, APP_REVIEW_TRANSLATION_LIMIT)
+          .map((row) => ({
+            content: row.content,
+            reasonSummary: row.latestAnalysis?.reasonSummary ?? null,
+          }));
+        await saveLocalizedContentCache(input.storeId, input.language, "app_reviews", {
+          sourceHash: buildAppReviewsHash(input.appReviews),
+          value: payloadRows,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to warm localized content cache:", error);
+    } finally {
+      localizedContentWarmInFlight.delete(warmKey);
+    }
+  })();
 }
 
 async function localizeStoreNameAndAddress(input: {
@@ -1726,17 +1997,63 @@ export async function getStoreDetail(
   
   // If we have a valid cached snapshot and force sync is off, use cache.
   if (cachedSnapshot && !forceGoogle && Array.isArray(cachedSnapshot.latestGoogleReviews)) {
-    const latestGoogleReviews =
-      language === "ko" && cachedSnapshot.latestGoogleReviews.length > 0
-        ? cachedSnapshot.latestGoogleReviews
-        : await loadLatestGoogleReviewsForStore({
-            name: cachedSnapshot.store.name,
-            address: cachedSnapshot.store.address,
-            language,
-            fallback: cachedSnapshot.latestGoogleReviews,
-          });
+    const aiSummaryKo = cachedSnapshot.aiReviewSummary ?? null;
+    const latestGoogleReviewsKo = cachedSnapshot.latestGoogleReviews;
+    const appReviewsKo = reviewsWithAuthorStats;
+    let aiReviewSummaryText = aiSummaryKo;
+    let latestGoogleReviews = latestGoogleReviewsKo;
+    let reviewsForResponse = appReviewsKo;
+
+    if (language !== "ko") {
+      const [cachedAiSummary, cachedLatestGoogleReviews, cachedAppReviews] =
+        await Promise.all([
+          loadLocalizedContentCache(id, language, "ai_summary"),
+          loadLocalizedContentCache(id, language, "latest_google_reviews"),
+          loadLocalizedContentCache(id, language, "app_reviews"),
+        ]);
+
+      if (aiSummaryKo) {
+        const aiSummaryHash = buildAiSummaryHash(aiSummaryKo);
+        if (cachedAiSummary?.sourceHash === aiSummaryHash && typeof cachedAiSummary.value === "string") {
+          aiReviewSummaryText = cachedAiSummary.value;
+          setTranslatedAiSummaryToMemoryCache(id, language, aiReviewSummaryText);
+        }
+      }
+
+      const latestGoogleHash = buildLatestGoogleReviewsHash(latestGoogleReviewsKo);
+      const cachedLatest = tryReadCachedLatestGoogleReviews(
+        cachedLatestGoogleReviews,
+        latestGoogleHash
+      );
+      if (cachedLatest) {
+        latestGoogleReviews = cachedLatest;
+      }
+
+      const appReviewsHash = buildAppReviewsHash(appReviewsKo);
+      const cachedApp = tryApplyCachedAppReviews(
+        appReviewsKo,
+        cachedAppReviews,
+        appReviewsHash
+      );
+      if (cachedApp) {
+        reviewsForResponse = cachedApp;
+      }
+
+      warmLocalizedContentCache({
+        storeId: id,
+        language,
+        aiSummaryText: aiSummaryKo,
+        latestGoogleReviews: latestGoogleReviewsKo,
+        appReviews: appReviewsKo,
+        shouldWarmAiSummary:
+          Boolean(aiSummaryKo) &&
+          !(cachedAiSummary?.sourceHash === buildAiSummaryHash(aiSummaryKo) && typeof cachedAiSummary.value === "string"),
+        shouldWarmLatestGoogleReviews: !cachedLatest,
+        shouldWarmAppReviews: !cachedApp,
+      });
+    }
+
     const latestReviewAt = getLatestReviewWrittenAt(latestGoogleReviews, reviewsWithAuthorStats);
-    const aiReviewSummaryText = cachedSnapshot.aiReviewSummary ?? null;
     const aiAdSuspectPercent =
       cachedSnapshot.aiAdSuspectPercent ??
       fallbackAdSuspectPercentFromSummary(cachedSnapshot.summary);
@@ -1763,7 +2080,7 @@ export async function getStoreDetail(
         ...cachedSnapshot.summary,
         appAverageRating: freshSummary.appAverageRating,
       },
-      reviews: reviewsWithAuthorStats, // Always return fresh reviews
+      reviews: reviewsForResponse,
     };
   }
   
@@ -1923,6 +2240,58 @@ export async function getStoreDetail(
     saveStoreDetailSnapshot(id, snapshot);
   }
 
+  let localizedAiSummary = aiReviewSummary;
+  let localizedLatestGoogleReviews = latestGoogleReviews;
+  let localizedAppReviews = reviewsWithAuthorStats;
+  if (language !== "ko") {
+    const [cachedAiSummary, cachedLatestGoogleReviews, cachedAppReviews] =
+      await Promise.all([
+        loadLocalizedContentCache(id, language, "ai_summary"),
+        loadLocalizedContentCache(id, language, "latest_google_reviews"),
+        loadLocalizedContentCache(id, language, "app_reviews"),
+      ]);
+
+    if (aiReviewSummary) {
+      const aiSummaryHash = buildAiSummaryHash(aiReviewSummary);
+      if (cachedAiSummary?.sourceHash === aiSummaryHash && typeof cachedAiSummary.value === "string") {
+        localizedAiSummary = cachedAiSummary.value;
+        setTranslatedAiSummaryToMemoryCache(id, language, localizedAiSummary);
+      }
+    }
+
+    const latestGoogleHash = buildLatestGoogleReviewsHash(latestGoogleReviews);
+    const cachedLatest = tryReadCachedLatestGoogleReviews(
+      cachedLatestGoogleReviews,
+      latestGoogleHash
+    );
+    if (cachedLatest) {
+      localizedLatestGoogleReviews = cachedLatest;
+    }
+
+    const appReviewsHash = buildAppReviewsHash(reviewsWithAuthorStats);
+    const cachedApp = tryApplyCachedAppReviews(
+      reviewsWithAuthorStats,
+      cachedAppReviews,
+      appReviewsHash
+    );
+    if (cachedApp) {
+      localizedAppReviews = cachedApp;
+    }
+
+    warmLocalizedContentCache({
+      storeId: id,
+      language,
+      aiSummaryText: aiReviewSummary,
+      latestGoogleReviews,
+      appReviews: reviewsWithAuthorStats,
+      shouldWarmAiSummary:
+        Boolean(aiReviewSummary) &&
+        !(cachedAiSummary?.sourceHash === buildAiSummaryHash(aiReviewSummary) && typeof cachedAiSummary.value === "string"),
+      shouldWarmLatestGoogleReviews: !cachedLatest,
+      shouldWarmAppReviews: !cachedApp,
+    });
+  }
+
   return {
     ...snapshot,
     localizedStore: await localizeStoreNameAndAddress({
@@ -1930,7 +2299,9 @@ export async function getStoreDetail(
       storeAddressKo: normalizedStore.address,
       language,
     }),
-    reviews: reviewsWithAuthorStats, // Include fresh reviews in response
+    aiReviewSummary: localizedAiSummary,
+    latestGoogleReviews: localizedLatestGoogleReviews,
+    reviews: localizedAppReviews,
   };
 }
 
@@ -1956,6 +2327,15 @@ export async function getStoreAiSummary(
         aiAdSuspectPercent: cachedSummary.adSuspectPercent ?? fallbackAd,
       };
     }
+    const summaryHash = buildAiSummaryHash(baseSummaryText);
+    const fromDbCache = await loadLocalizedContentCache(id, language, "ai_summary");
+    if (fromDbCache?.sourceHash === summaryHash && typeof fromDbCache.value === "string") {
+      setTranslatedAiSummaryToMemoryCache(id, language, fromDbCache.value);
+      return {
+        aiReviewSummary: fromDbCache.value,
+        aiAdSuspectPercent: cachedSummary.adSuspectPercent ?? fallbackAd,
+      };
+    }
     const fromMemory = getTranslatedAiSummaryFromMemoryCache(id, language);
     if (fromMemory) {
       return {
@@ -1969,6 +2349,10 @@ export async function getStoreAiSummary(
     });
     if (translated) {
       setTranslatedAiSummaryToMemoryCache(id, language, translated);
+      void saveLocalizedContentCache(id, language, "ai_summary", {
+        sourceHash: summaryHash,
+        value: translated,
+      });
       return {
         aiReviewSummary: translated,
         aiAdSuspectPercent: cachedSummary.adSuspectPercent ?? fallbackAd,
@@ -2054,6 +2438,10 @@ export async function getStoreAiSummary(
   });
   if (translated) {
     setTranslatedAiSummaryToMemoryCache(id, language, translated);
+    void saveLocalizedContentCache(id, language, "ai_summary", {
+      sourceHash: buildAiSummaryHash(result.text),
+      value: translated,
+    });
   }
   return {
     aiReviewSummary: translated ?? result.text,

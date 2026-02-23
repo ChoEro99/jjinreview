@@ -71,6 +71,15 @@ create table if not exists public.ai_review_summaries (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.localized_content_cache (
+  store_id bigint not null references public.stores(id) on delete cascade,
+  language text not null,
+  content_key text not null check (content_key in ('ai_summary', 'latest_google_reviews', 'app_reviews')),
+  payload jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (store_id, language, content_key)
+);
+
 alter table public.stores add column if not exists updated_at timestamptz not null default now();
 alter table public.stores add column if not exists latitude numeric(10, 7);
 alter table public.stores add column if not exists longitude numeric(10, 7);
@@ -93,6 +102,7 @@ create index if not exists idx_review_analyses_store_id_created_at on public.rev
 create index if not exists idx_google_review_cache_updated_at on public.google_review_cache(updated_at desc);
 create index if not exists idx_naver_signal_cache_updated_at on public.naver_signal_cache(updated_at desc);
 create index if not exists idx_ai_review_summaries_updated_at on public.ai_review_summaries(updated_at desc);
+create index if not exists idx_localized_content_cache_updated_at on public.localized_content_cache(updated_at desc);
 create index if not exists idx_store_detail_snapshots_expires_at on public.store_detail_snapshots(expires_at desc);
 
 -- 유저 테이블 (NextAuth용)
@@ -177,6 +187,12 @@ before update on public.ai_review_summaries
 for each row
 execute function public.set_updated_at();
 
+drop trigger if exists trg_localized_content_cache_updated_at on public.localized_content_cache;
+create trigger trg_localized_content_cache_updated_at
+before update on public.localized_content_cache
+for each row
+execute function public.set_updated_at();
+
 alter table public.stores enable row level security;
 alter table public.reviews enable row level security;
 alter table public.review_analyses enable row level security;
@@ -184,6 +200,7 @@ alter table public.store_metrics enable row level security;
 alter table public.google_review_cache enable row level security;
 alter table public.naver_signal_cache enable row level security;
 alter table public.ai_review_summaries enable row level security;
+alter table public.localized_content_cache enable row level security;
 alter table public.store_detail_snapshots enable row level security;
 alter table public.users enable row level security;
 alter table public.user_reviews enable row level security;
